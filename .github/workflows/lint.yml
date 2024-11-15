@@ -1,0 +1,38 @@
+name: Lint and Format
+
+on:
+    pull_request:
+        branches:
+            - "*"
+
+jobs:
+    lint-backend:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v3
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v3
+              with:
+                  node-version: "20.15.0"
+
+            - name: Install dependencies for backend
+              run: |
+                  yarn install
+
+            - name: Run ESLint on backend
+              run: |
+                  yarn lint --fix
+
+            - name: Run Prettier (check formatting) on backend
+              run: |
+                  yarn format --write
+
+            - name: Commit and push changes if any
+              run: |
+                  git config --global user.name 'github-actions[bot]'
+                  git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+                  git add .
+                  git commit -m "Auto-fix lint and format issues" || echo "No changes to commit"
+                  git push origin HEAD:${{ github.event.pull_request.head.ref }} || echo "No changes to push"

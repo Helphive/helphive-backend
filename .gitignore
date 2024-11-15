@@ -1,0 +1,9 @@
+node_modules
+.env
+logs/*
+dist/*
+controllers/service-accounts/helphive-service-account.json
+helphive-gcloud.json
+package-lock.json
+# yarn.lock
+helphive-service-account.json

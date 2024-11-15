@@ -64,6 +64,7 @@ mongoose.connection.once("open", () => {
 	const server = app.listen(PORT, () => {
 		if (
 			!process.env.PORT ||
+			!process.env.NODE_ENV ||
 			!process.env.CLIENT_BASE_URL ||
 			!process.env.DATABASE_URI ||
 			!process.env.ACCESS_TOKEN_SECRET ||

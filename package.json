@@ -7,15 +7,16 @@
 	"license": "UNLICENSED",
 	"scripts": {
 		"dev": "nodemon --exec ts-node ./index.ts",
-		"build": "tsc",
+		"build": "tsc && cpx 'views/**/*' dist/views && cpx 'public/**/*' dist/public",
 		"test": "",
 		"lint": "eslint .",
 		"format": "prettier --write .",
 		"prepare": "husky .husky",
 		"email": "email dev --dir emails",
-		"start": "nodemon --exec ts-node ./index.ts"
+		"start": "tsc && node dist/index.js"
 	},
 	"dependencies": {
+		"@eslint/compat": "^1.2.3",
 		"@google-cloud/storage": "^7.9.0",
 		"@react-email/components": "^0.0.22",
 		"@react-email/render": "^0.0.17",
@@ -57,6 +58,7 @@
 		"@types/uuid": "^9.0.8",
 		"@typescript-eslint/eslint-plugin": "^7.16.1",
 		"@typescript-eslint/parser": "^7.16.1",
+		"cpx": "^1.5.0",
 		"eslint": "9.x",
 		"eslint-config-prettier": "^9.1.0",
 		"eslint-plugin-prettier": "^5.1.3",

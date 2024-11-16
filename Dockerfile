@@ -11,10 +11,10 @@ RUN yarn install
 COPY . .
 
 # Compile TypeScript files
-RUN yarn build
+# RUN yarn build
 
 # Expose the application port
 EXPOSE 8080
 
 # Start the application using the compiled JavaScript file
-CMD ["node", "dist/index.js"]
+CMD ["nodemon", "--exec", "ts-node", "./index.ts"]

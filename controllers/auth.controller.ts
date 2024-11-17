@@ -237,11 +237,13 @@ export const handleRefreshToken = async (req: Request, res: Response) => {
 				refreshToken: newRefreshToken,
 			});
 		} catch (error) {
+			console.log(error);
 			foundUser.refreshToken = [];
 			await foundUser.save();
 			return res.status(403).json({ message: "WTF forbidden!" });
 		}
 	} catch (error) {
+		console.log(error);
 		res.status(500).json({ message: "Internal server error!" });
 	}
 };

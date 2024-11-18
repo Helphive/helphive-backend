@@ -89,8 +89,8 @@ export const NotionResetPasswordEmail = ({ baseUrl, loginCode, verificationLink 
 					</Text>
 					<Img src={`${baseUrl}/favicon.png`} width="32" height="32" alt="HelpHive's Logo" />
 					<Text style={footer}>
-						<Link href="https://helphive.io" target="_blank" style={{ ...link, color: "#898989" }}>
-							HelpHive.io
+						<Link href="https://helphivenow.com" target="_blank" style={{ ...link, color: "#898989" }}>
+							Helphive
 						</Link>
 						, the all-in-one-marketplace
 						<br />

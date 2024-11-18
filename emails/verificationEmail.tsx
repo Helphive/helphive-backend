@@ -105,9 +105,9 @@ export const NotionMagicLinkEmail = ({ baseUrl, loginCode, verificationLink }: N
 };
 
 NotionMagicLinkEmail.PreviewProps = {
-	baseUrl: "http://localhost:8080",
+	baseUrl: "https://api.helphivenow.com",
 	loginCode: "sparo-ndigo-amurt-secan",
-	verificationLink: "http://localhost:8080/auth/verify-email?token=hello-world",
+	verificationLink: "https://api.helphivenow.com/auth/verify-email?token=random",
 } as NotionMagicLinkEmailProps;
 
 export default NotionMagicLinkEmail;

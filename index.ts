@@ -63,7 +63,15 @@ app.use("/webhook", express.raw({ type: "application/json" }), webhookRoute);
 app.use(express.json());
 app.use(cookieParser());
 
-app.use(express.static(path.join(__dirname, "public")));
+app.use(
+	express.static(path.join(__dirname, "public"), {
+		setHeaders: (res, filePath) => {
+			if (filePath.endsWith("apple-app-site-association")) {
+				res.setHeader("Content-Type", "application/json");
+			}
+		},
+	}),
+);
 
 app.get("/", (req: Request, res: Response) => {
 	res.sendFile(path.join(__dirname, "views", "Home", "home.html"));
@@ -72,6 +80,12 @@ app.get("/", (req: Request, res: Response) => {
 app.use("/auth", authRoute);
 app.use("/admin", adminRoute);
 app.use("/email", emailRoute);
+
+app.get("/stripe-onboarding", (req: Request, res: Response) => {
+	const refresh = req.query.refresh;
+	const deepLink = `helphivenow://stripe-onboarding?refresh=${refresh}`;
+	res.redirect(deepLink);
+});
 
 app.all("*", (req: Request, res: Response) => {
 	res.status(404);

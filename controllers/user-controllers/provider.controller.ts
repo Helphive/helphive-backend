@@ -8,6 +8,7 @@ import ProviderAccountRequest from "../../dal/models/providerapplication.model";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
 import { sendNotification } from "../service-accounts/onesignal";
+import stripe from "../service-accounts/stripe";
 
 declare module "express" {
 	interface Request {
@@ -306,4 +307,45 @@ const sendBookingStartedNotification = async (userId: string, bookingId: string)
 			error.response,
 		);
 	}
+};
+
+export const handleGetStripeConnectedAccount = async (req: Request, res: Response) => {
+	const email = req.user;
+
+	try {
+		const user = await UserModel.findOne({ email: email }).select("stripeConnectedAccountId").lean();
+		if (!user) {
+			return res.status(404).json({ message: "User not found" });
+		}
+
+		let connectedAccountId = user.stripeConnectedAccountId;
+
+		if (!connectedAccountId) {
+			const account = await stripe.accounts.create({
+				type: "express",
+				email: req.body.email,
+			});
+
+			connectedAccountId = account.id;
+			await UserModel.findOneAndUpdate({ email: email }, { stripeConnectedAccountId: connectedAccountId });
+		}
+
+		const connectedAccountOnboardingLink = await generateAccountLink(connectedAccountId);
+
+		return res.status(200).json({ connectedAccountOnboardingLink });
+	} catch (error) {
+		console.error("Error handling Stripe connected account:", error);
+		return res.status(500).json({ message: "Internal server error" });
+	}
+};
+
+const generateAccountLink = async (connectedAccountId: string) => {
+	const accountLink = await stripe.accountLinks.create({
+		account: connectedAccountId,
+		refresh_url: "https://yourapp.com/onboarding/refresh", // Ensure this is a valid URL
+		return_url: "https://yourapp.com/onboarding-complete", // Use a valid URL here
+		type: "account_onboarding",
+	});
+
+	return accountLink.url;
 };

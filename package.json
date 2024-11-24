@@ -7,7 +7,7 @@
 	"license": "UNLICENSED",
 	"scripts": {
 		"dev": "nodemon --exec ts-node ./index.ts",
-		"build": "tsc && node build.js",
+		"build": "tsc && node build.mjs",
 		"test": "",
 		"lint": "eslint .",
 		"format": "prettier --write .",

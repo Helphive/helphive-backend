@@ -342,8 +342,8 @@ export const handleGetStripeConnectedAccount = async (req: Request, res: Respons
 const generateAccountLink = async (connectedAccountId: string) => {
 	const accountLink = await stripe.accountLinks.create({
 		account: connectedAccountId,
-		refresh_url: "https://yourapp.com/onboarding/refresh", // Ensure this is a valid URL
-		return_url: "https://yourapp.com/onboarding-complete", // Use a valid URL here
+		refresh_url: `${process.env.CLIENT_BASE_URL}/stripe-onboarding?refresh=true`,
+		return_url: `${process.env.CLIENT_BASE_URL}/stripe-onboarding`,
 		type: "account_onboarding",
 	});
 

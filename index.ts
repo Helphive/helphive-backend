@@ -81,6 +81,12 @@ app.use("/auth", authRoute);
 app.use("/admin", adminRoute);
 app.use("/email", emailRoute);
 
+app.get("/stripe-onboarding", (req: Request, res: Response) => {
+	const refresh = req.query.refresh;
+	const deepLink = `helphivenow://stripe-onboarding?refresh=${refresh}`;
+	res.redirect(deepLink);
+});
+
 app.all("*", (req: Request, res: Response) => {
 	res.status(404);
 	if (req.accepts("json")) {

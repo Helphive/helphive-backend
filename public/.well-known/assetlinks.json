@@ -1,0 +1,12 @@
+[
+	{
+		"relation": ["delegate_permission/common.handle_all_urls"],
+		"target": {
+			"namespace": "android_app",
+			"package_name": "com.helphivenow.app",
+			"sha256_cert_fingerprints": [
+				"D4:9A:E6:C7:71:64:FB:1A:E9:3C:C4:AE:C4:7D:AA:F7:89:5D:78:91:E2:4A:D5:B3:F4:98:5F:9D:D0:B4:7C:E5"
+			]
+		}
+	}
+]

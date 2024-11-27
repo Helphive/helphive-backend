@@ -6,6 +6,8 @@ import UserModel from "../dal/models/user.model";
 import { oneSignalApi, sendNotification } from "./service-accounts/onesignal";
 import mongoose from "mongoose";
 import BookingModel from "../dal/models/booking.model";
+import PaymentModel from "../dal/models/payment.model";
+import EarningModel from "../dal/models/earning.model";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
 const refreshTokenKey = process.env.REFRESH_TOKEN_SECRET || "";
@@ -442,6 +444,17 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 		if (booking.status !== "in progress") {
 			return res.status(400).json({ message: "Booking is not in progress." });
 		}
+
+		const payment = await PaymentModel.findOne({ bookingId: booking._id });
+		if (!payment || !payment.paymentIntentId) {
+			return res.status(400).json({ message: "Payment not found for this booking." });
+		}
+
+		await EarningModel.create({
+			bookingId: booking._id,
+			amount: payment.amount,
+			date: new Date(),
+		});
 
 		booking.status = "completed";
 		booking.completedAt = new Date();

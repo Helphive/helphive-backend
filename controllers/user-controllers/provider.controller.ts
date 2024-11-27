@@ -2,13 +2,14 @@ import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { validationResult } from "express-validator";
 import { googleStorage, providerAccountBucket } from "../service-accounts/cloud-storage";
+import stripe from "../service-accounts/stripe";
+import { sendNotification } from "../service-accounts/onesignal";
 
 import UserModel from "../../dal/models/user.model";
 import ProviderAccountRequest from "../../dal/models/providerapplication.model";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
-import { sendNotification } from "../service-accounts/onesignal";
-import stripe from "../service-accounts/stripe";
+import EarningModel from "../../dal/models/earning.model";
 
 declare module "express" {
 	interface Request {
@@ -348,4 +349,37 @@ const generateAccountLink = async (connectedAccountId: string) => {
 	});
 
 	return accountLink.url;
+};
+
+export const handleGetEarnings = async (req: Request, res: Response) => {
+	const email = req.user;
+
+	try {
+		const user = await UserModel.findOne({ email: email }).select("stripeConnectedAccountId");
+		if (!user) {
+			return res.status(404).json({ message: "User not found" });
+		}
+
+		const providerBookings = await BookingModel.find({
+			providerId: user._id,
+			status: "completed",
+		});
+
+		const earnings = await EarningModel.find({
+			bookingId: { $in: providerBookings.map((booking) => booking._id) },
+		}).sort({ createdAt: -1 });
+
+		let availableBalance = earnings
+			.filter((earning) => earning.status === "pending")
+			.reduce((total, earning) => total + earning.amount, 0);
+
+		const cutPercentage = 0.2;
+		const cutAmount = availableBalance * cutPercentage;
+		availableBalance -= cutAmount;
+
+		return res.status(200).json({ earnings, availableBalance });
+	} catch (error) {
+		console.error("Error getting provider earnings:", error);
+		return res.status(500).json({ message: "Internal server error" });
+	}
 };

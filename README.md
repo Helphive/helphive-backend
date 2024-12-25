@@ -7,7 +7,7 @@ This folder contains the Node.js Express server for the HelpHive platform, handl
 ### 1. Install Dependencies
 
 ```bash
-yarn install
+npm install
 ```
 
 ### 2. Environment Variables
@@ -16,37 +16,37 @@ Create a `.env` file based on the `.env.example`:
 
 ```
 PORT=
-CLIENT_BASE_URL=
+NODE_ENV=
 DATABASE_URI=
 ACCESS_TOKEN_SECRET=
 REFRESH_TOKEN_SECRET=
 EMAIL_VERIFICATION_SECRET=
+GOOGLE_CLOUD_SERVICE_ACCOUNT_PRIVATE_KEY=
 RESEND_API_KEY=
 RESEND_AUDIENCE_ID=
-VERIFICATION_EMAIL=
-PROVIDER_ACCOUNT_BUCKET=
-GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT=
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
+ONE_SIGNAL_APP_ID=
+ONE_SIGNAL_REST_API_KEY=
 ```
 
 ### 3. Start the Server
 
 ```bash
-yarn start
+npm start
 ```
 
 ### 4. Build the Project
 
 ```bash
-yarn build
+npm run build
 ```
 
 ### 5. Useful Commands
 
 - **Email Preview**: Preview email templates during development:
     ```bash
-    yarn email
+    npm run email
     ```
 
 ## Development
@@ -57,11 +57,11 @@ Lint and format checks are automatically run on pull requests. Husky hooks ensur
 
 ### Scripts
 
-- **Start**: `yarn start` - Start the development server with `nodemon` and `ts-node`.
-- **Build**: `yarn build` - Compile TypeScript files to JavaScript.
-- **Lint**: `yarn lint` - Run ESLint to check for code issues.
-- **Format**: `yarn format` - Run Prettier to format code.
-- **Email Preview**: `yarn email` - Preview email templates during development.
+- **Start**: `npm start` - Start the development server with `nodemon` and `ts-node`.
+- **Build**: `npm build` - Compile TypeScript files to JavaScript.
+- **Lint**: `npm lint` - Run ESLint to check for code issues.
+- **Format**: `npm format` - Run Prettier to format code.
+- **Email Preview**: `npm email` - Preview email templates during development.
 
 ## Notes
 

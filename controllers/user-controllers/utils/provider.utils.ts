@@ -1,5 +1,6 @@
 import stripe from "../../service-accounts/stripe";
 import { sendNotification } from "../../service-accounts/onesignal";
+import { CLIENT_BASE_URL } from "../../../config";
 
 export const sendBookingStartedNotification = async (userId: string, bookingId: string) => {
 	try {
@@ -27,8 +28,8 @@ export const sendBookingStartedNotification = async (userId: string, bookingId: 
 export const generateAccountLink = async (connectedAccountId: string) => {
 	const accountLink = await stripe.accountLinks.create({
 		account: connectedAccountId,
-		refresh_url: `${process.env.CLIENT_BASE_URL}/stripe-onboarding?refresh=true`,
-		return_url: `${process.env.CLIENT_BASE_URL}/stripe-onboarding`,
+		refresh_url: `${CLIENT_BASE_URL}/stripe-onboarding?refresh=true`,
+		return_url: `${CLIENT_BASE_URL}/stripe-onboarding`,
 		type: "account_onboarding",
 	});
 

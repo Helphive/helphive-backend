@@ -4,10 +4,11 @@ import jwt from "jsonwebtoken";
 import NotionMagicLinkEmail from "../emails/verificationEmail";
 import NotionResetPasswordEmail from "../emails/resetPasswordEmail";
 import UserModel from "../dal/models/user.model";
+import { CLIENT_BASE_URL, VERIFICATION_EMAIL } from "../config";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const resendAudienceId = process.env.RESEND_AUDIENCE_ID || "";
-const verificationEmail = process.env.VERIFICATION_EMAIL || "";
+const verificationEmail = VERIFICATION_EMAIL;
 
 export const createContact = async (req: Request, res: Response, next: NextFunction) => {
 	const { firstName, lastName, email } = req.body;
@@ -45,8 +46,8 @@ export const sendMagicLinkEmail = async (req: Request, res: Response) => {
 		}
 
 		const token = generateVerificationToken(user?._id as string, user?.email || "");
-		const verificationLink = `${process.env.CLIENT_BASE_URL}/auth/verify-email?token=${token}`;
-		const baseUrl = process.env.CLIENT_BASE_URL || "";
+		const verificationLink = `${CLIENT_BASE_URL}/auth/verify-email?token=${token}`;
+		const baseUrl = CLIENT_BASE_URL || "";
 
 		user.emailVerificationTokens.push(token);
 		await user.save();
@@ -80,8 +81,8 @@ export const sendResetPasswordEmail = async (req: Request, res: Response) => {
 		}
 
 		const token = generateVerificationToken(user?._id as string, user?.email || "");
-		const verificationLink = `${process.env.CLIENT_BASE_URL}/auth/reset-password?token=${token}`;
-		const baseUrl = process.env.CLIENT_BASE_URL || "";
+		const verificationLink = `${CLIENT_BASE_URL}/auth/reset-password?token=${token}`;
+		const baseUrl = CLIENT_BASE_URL || "";
 
 		user.resetPasswordTokens.push(token);
 		await user.save();

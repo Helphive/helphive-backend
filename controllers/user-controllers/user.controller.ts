@@ -6,7 +6,7 @@ import stripe from "../service-accounts/stripe";
 import UserModel from "../../dal/models/user.model";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
-import { sendNotification } from "../service-accounts/onesignal";
+import { sendBookingStartApprovedNotification } from "./utils/user.utils";
 
 declare module "express" {
 	interface Request {
@@ -226,28 +226,5 @@ export const handleApproveStartJobRequest = async (req: Request, res: Response) 
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
-	}
-};
-
-const sendBookingStartApprovedNotification = async (userId: string, bookingId: string) => {
-	try {
-		const notificationMessage = {
-			include_aliases: { external_id: [userId] },
-			contents: { en: `Your start request was approved!` },
-			headings: { en: "You can start the job. Your time is being tracked." },
-			data: {
-				screen: "MyOrderDetails",
-				bookingId: bookingId,
-			},
-		};
-		console.log(notificationMessage);
-
-		await sendNotification(notificationMessage);
-		console.log("Notification sent to ids: ", userId);
-	} catch (error: any) {
-		console.error(
-			`Error sending booking notification for booking ID ${bookingId} to available providers:`,
-			error.response,
-		);
 	}
 };

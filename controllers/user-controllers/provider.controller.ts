@@ -3,13 +3,13 @@ import { v4 as uuidv4 } from "uuid";
 import { validationResult } from "express-validator";
 import { googleStorage, providerAccountBucket } from "../service-accounts/cloud-storage";
 import stripe from "../service-accounts/stripe";
-import { sendNotification } from "../service-accounts/onesignal";
 
 import UserModel from "../../dal/models/user.model";
 import ProviderAccountRequest from "../../dal/models/providerapplication.model";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
 import EarningModel from "../../dal/models/earning.model";
+import { generateAccountLink, sendBookingStartedNotification } from "./utils/provider.utils";
 
 declare module "express" {
 	interface Request {
@@ -264,9 +264,9 @@ export const handleStartBooking = async (req: Request, res: Response) => {
 			return res.status(404).json({ message: "User or booking not found." });
 		}
 
-		// if (booking.startDate.getTime() > new Date().getTime()) {
-		// 	return res.status(400).json({ message: "Booking start time is not yet reached." });
-		// }
+		if (booking.startDate.getTime() > new Date().getTime()) {
+			return res.status(400).json({ message: "Booking start time is not yet reached." });
+		}
 
 		if (booking.providerId?.toString() != user._id?.toString()) {
 			return res.status(400).json({ message: "This is not the provider for this booking." });
@@ -284,29 +284,6 @@ export const handleStartBooking = async (req: Request, res: Response) => {
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
-	}
-};
-
-const sendBookingStartedNotification = async (userId: string, bookingId: string) => {
-	try {
-		const notificationMessage = {
-			include_aliases: { external_id: [userId] },
-			contents: { en: `Your booking requires attention!` },
-			headings: { en: "Please approve the provider's request to start the job." },
-			data: {
-				screen: "BookingDetails",
-				bookingId: bookingId,
-			},
-		};
-		console.log(notificationMessage);
-
-		await sendNotification(notificationMessage);
-		console.log("Notification sent to ids: ", userId);
-	} catch (error: any) {
-		console.error(
-			`Error sending booking notification for booking ID ${bookingId} to available providers:`,
-			error.response,
-		);
 	}
 };
 
@@ -338,17 +315,6 @@ export const handleGetStripeConnectedAccount = async (req: Request, res: Respons
 		console.error("Error handling Stripe connected account:", error);
 		return res.status(500).json({ message: "Internal server error" });
 	}
-};
-
-const generateAccountLink = async (connectedAccountId: string) => {
-	const accountLink = await stripe.accountLinks.create({
-		account: connectedAccountId,
-		refresh_url: `${process.env.CLIENT_BASE_URL}/stripe-onboarding?refresh=true`,
-		return_url: `${process.env.CLIENT_BASE_URL}/stripe-onboarding`,
-		type: "account_onboarding",
-	});
-
-	return accountLink.url;
 };
 
 export const handleGetEarnings = async (req: Request, res: Response) => {

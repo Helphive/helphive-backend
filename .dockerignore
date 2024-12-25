@@ -5,4 +5,5 @@ dispatch.yaml
 .git
 .gitignore
 yarn-error.log
-package-lock.json
+yarn.lock
+# package-lock.json

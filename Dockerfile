@@ -1,17 +1,17 @@
-FROM node:20.15.0-alpine
+FROM node:22.12.0-alpine
 
 WORKDIR /app
 
-COPY package.json yarn.lock ./
+COPY package.json package-lock.json ./
 
 # Install dependencies using Yarn
-RUN yarn install
+RUN npm install
 
 # Copy the rest of the application code
 COPY . .
 
 # Compile TypeScript files
-RUN yarn build
+RUN npm run build
 
 # Expose the application port
 EXPOSE 8080

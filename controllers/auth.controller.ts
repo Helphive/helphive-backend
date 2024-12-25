@@ -3,11 +3,12 @@ import bcrypt from "bcrypt";
 import jwt, { VerifyErrors } from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import UserModel from "../dal/models/user.model";
-import { oneSignalApi, sendNotification } from "./service-accounts/onesignal";
+import { oneSignalApi } from "./service-accounts/onesignal";
 import mongoose from "mongoose";
 import BookingModel from "../dal/models/booking.model";
 import PaymentModel from "../dal/models/payment.model";
 import EarningModel from "../dal/models/earning.model";
+import { sendBookingCancelledNotification, sendBookingCompletedNotification } from "./utils/auth.utils";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
 const refreshTokenKey = process.env.REFRESH_TOKEN_SECRET || "";
@@ -323,7 +324,7 @@ export const handleGetUserInfo = async (req: Request, res: Response) => {
 	}
 };
 
-export const verifyEmail = async (req: Request, res: Response) => {
+export const handleVerifyEmail = async (req: Request, res: Response) => {
 	const { token } = req.query;
 
 	if (!token) {
@@ -366,7 +367,7 @@ export const verifyEmail = async (req: Request, res: Response) => {
 	}
 };
 
-export const resetPassword = async (req: Request, res: Response) => {
+export const handleResetPassword = async (req: Request, res: Response) => {
 	const { token } = req.body;
 
 	if (!token) {
@@ -477,40 +478,6 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 	}
 };
 
-const sendBookingCompletedNotification = async (userId: string, providerId: string, bookingId: string) => {
-	try {
-		const notificationMessage1 = {
-			include_aliases: { external_id: [userId] },
-			contents: { en: `Booking Complete` },
-			headings: { en: "You got the requested service." },
-			data: {
-				screen: "BookingDetails",
-				bookingId: bookingId,
-			},
-		};
-		const notificationMessage2 = {
-			include_aliases: { external_id: [providerId] },
-			contents: { en: `Booking Complete` },
-			headings: { en: "You job is now complete." },
-			data: {
-				screen: "MyOrderDetails",
-				bookingId: bookingId,
-			},
-		};
-		console.log(notificationMessage1);
-		console.log(notificationMessage2);
-
-		await sendNotification(notificationMessage1);
-		await sendNotification(notificationMessage2);
-		console.log("Notification sent to ids: ", userId);
-	} catch (error: any) {
-		console.error(
-			`Error sending booking notification for booking ID ${bookingId} to available providers:`,
-			error.response,
-		);
-	}
-};
-
 export const handleCancelBooking = async (req: Request, res: Response) => {
 	try {
 		const userEmail = req.user;
@@ -558,36 +525,5 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
-	}
-};
-
-const sendBookingCancelledNotification = async (userId: string, providerId: string, bookingId: string) => {
-	try {
-		const notificationMessage1 = {
-			include_aliases: { external_id: [userId] },
-			contents: { en: `Booking Cancelled` },
-			headings: { en: "Your booking has been cancelled." },
-			data: {
-				screen: "BookingDetails",
-				bookingId: bookingId,
-			},
-		};
-		const notificationMessage2 = {
-			include_aliases: { external_id: [providerId] },
-			contents: { en: `Booking Cancelled` },
-			headings: { en: "A booking has been cancelled." },
-			data: {
-				screen: "MyOrderDetails",
-				bookingId: bookingId,
-			},
-		};
-		console.log(notificationMessage1);
-		console.log(notificationMessage2);
-
-		await sendNotification(notificationMessage1);
-		await sendNotification(notificationMessage2);
-		console.log("Notification sent to ids: ", userId);
-	} catch (error: any) {
-		console.error(`Error sending booking cancellation notification for booking ID ${bookingId}:`, error.response);
 	}
 };

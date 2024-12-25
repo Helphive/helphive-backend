@@ -118,7 +118,7 @@ export const handleGetBookings = async (req: Request, res: Response) => {
 		const payments = await PaymentModel.find({ bookingId: { $in: bookingIds }, status: "completed" });
 		const paidBookingIds = payments.map((payment) => payment.bookingId.toString());
 		const paidBookings = bookings
-			.filter((booking) => {
+			.filter((booking: any) => {
 				const isPaid = paidBookingIds.includes(booking._id.toString());
 				if (!isPaid) return false;
 
@@ -215,7 +215,7 @@ export const handleAcceptBooking = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "Booking start time has already passed." });
 		}
 
-		booking.providerId = user._id;
+		booking.providerId = user._id as any;
 		await booking.save();
 
 		res.status(200).json({ message: "Booking accepted successfully." });

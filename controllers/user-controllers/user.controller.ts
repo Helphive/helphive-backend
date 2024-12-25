@@ -71,7 +71,7 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 		});
 		await newBooking.save();
 
-		req.bookingId = newBooking._id;
+		req.bookingId = (newBooking._id as string).toString();
 		next();
 	} catch (error) {
 		console.error("Error handling create booking:", error);

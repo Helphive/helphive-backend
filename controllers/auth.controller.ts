@@ -420,7 +420,7 @@ export const handleOneSignalSetup = async (user: any) => {
 export const handleCompleteBooking = async (req: Request, res: Response) => {
 	try {
 		const userEmail = req.user;
-		const user = await UserModel.findOne({ email: userEmail });
+		const user = (await UserModel.findOne({ email: userEmail })) as unknown as any;
 		if (!user) {
 			return res.status(404).json({ message: "User not found." });
 		}
@@ -437,7 +437,9 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 			return res.status(404).json({ message: "Booking not found." });
 		}
 
-		if (![booking.userId._id.toString(), booking.providerId._id.toString()].includes(user._id.toString())) {
+		if (
+			![booking.userId._id.toString(), booking.providerId._id.toString()].includes((user as any)._id.toString())
+		) {
 			return res.status(403).json({ message: "User not authorized to complete this booking." });
 		}
 
@@ -529,7 +531,9 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 			return res.status(404).json({ message: "Booking not found." });
 		}
 
-		if (![booking.userId._id.toString(), booking.providerId._id.toString()].includes(user._id.toString())) {
+		if (
+			![booking.userId._id.toString(), booking.providerId._id.toString()].includes((user as any)._id.toString())
+		) {
 			return res.status(403).json({ message: "User not authorized to cancel this booking." });
 		}
 

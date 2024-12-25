@@ -8,8 +8,8 @@ import {
 	handleLogout,
 	handleRefreshToken,
 	handleGetUserInfo,
-	verifyEmail,
-	resetPassword,
+	handleVerifyEmail,
+	handleResetPassword,
 	handleCompleteBooking,
 	handleCancelBooking,
 } from "../controllers/auth.controller";
@@ -36,8 +36,8 @@ authRoute.post("/login", validateLoginFields, handleLogin);
 authRoute.post("/logout", handleLogout);
 authRoute.post("/refresh", handleRefreshToken);
 authRoute.get("/user-info", verifyJWT, verifyRoles("User", "Provider"), handleGetUserInfo);
-authRoute.get("/verify-email", verifyEmail);
-authRoute.post("/reset-password", validateResetPasswordFields, resetPassword);
+authRoute.get("/verify-email", handleVerifyEmail);
+authRoute.post("/reset-password", validateResetPasswordFields, handleResetPassword);
 authRoute.use("/reset-password", express.static(path.join(__dirname, "..", "views", "Reset Password")));
 authRoute.use("/user", verifyJWT, verifyRoles("User"), userRoute);
 authRoute.use("/provider", verifyJWT, verifyRoles("Provider"), providerRoute);

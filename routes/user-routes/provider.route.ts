@@ -9,6 +9,7 @@ import {
 	handleMyOrders,
 	handleStartBooking,
 	handleGetStripeConnectedAccount,
+	handleGetEarnings,
 } from "../../controllers/user-controllers/provider.controller";
 import { validateRequestProviderAccountFields } from "../../controllers/validators/provider.validators";
 
@@ -35,5 +36,6 @@ providerRoute.post("/accept-booking", handleAcceptBooking);
 providerRoute.get("/my-orders", handleMyOrders);
 providerRoute.post("/start-booking", handleStartBooking);
 providerRoute.get("/stripe-connect-onboarding", handleGetStripeConnectedAccount);
+providerRoute.get("/get-earnings", handleGetEarnings);
 
 export default providerRoute;

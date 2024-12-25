@@ -76,7 +76,7 @@ const updatePaymentStatus = async (paymentIntentId: string, status: string) => {
 const sendBookingNotification = async (bookingId: string) => {
 	try {
 		const availableProviders = await UserModel.find({ isProviderAvailable: true });
-		const providerIds = availableProviders.map((provider) => provider._id.toString());
+		const providerIds = availableProviders.map((provider) => (provider._id as any).toString());
 
 		console.log(providerIds);
 

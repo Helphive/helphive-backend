@@ -44,7 +44,7 @@ export const sendMagicLinkEmail = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "Email already verified" });
 		}
 
-		const token = generateVerificationToken(user?._id, user?.email || "");
+		const token = generateVerificationToken(user?._id as string, user?.email || "");
 		const verificationLink = `${process.env.CLIENT_BASE_URL}/auth/verify-email?token=${token}`;
 		const baseUrl = process.env.CLIENT_BASE_URL || "";
 
@@ -79,7 +79,7 @@ export const sendResetPasswordEmail = async (req: Request, res: Response) => {
 			return res.status(404).json({ message: "User not found" });
 		}
 
-		const token = generateVerificationToken(user?._id, user?.email || "");
+		const token = generateVerificationToken(user?._id as string, user?.email || "");
 		const verificationLink = `${process.env.CLIENT_BASE_URL}/auth/reset-password?token=${token}`;
 		const baseUrl = process.env.CLIENT_BASE_URL || "";
 

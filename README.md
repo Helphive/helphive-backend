@@ -44,7 +44,7 @@ yarn build
 
 ### 5. Useful Commands
 
--   **Email Preview**: Preview email templates during development:
+- **Email Preview**: Preview email templates during development:
     ```bash
     yarn email
     ```
@@ -57,17 +57,17 @@ Lint and format checks are automatically run on pull requests. Husky hooks ensur
 
 ### Scripts
 
--   **Start**: `yarn start` - Start the development server with `nodemon` and `ts-node`.
--   **Build**: `yarn build` - Compile TypeScript files to JavaScript.
--   **Lint**: `yarn lint` - Run ESLint to check for code issues.
--   **Format**: `yarn format` - Run Prettier to format code.
--   **Email Preview**: `yarn email` - Preview email templates during development.
+- **Start**: `yarn start` - Start the development server with `nodemon` and `ts-node`.
+- **Build**: `yarn build` - Compile TypeScript files to JavaScript.
+- **Lint**: `yarn lint` - Run ESLint to check for code issues.
+- **Format**: `yarn format` - Run Prettier to format code.
+- **Email Preview**: `yarn email` - Preview email templates during development.
 
 ## Notes
 
--   This project is written in TypeScript.
--   Uses MongoDB as the database, configured via `DATABASE_URI`.
--   Google Cloud Storage is used for storing provider account information.
+- This project is written in TypeScript.
+- Uses MongoDB as the database, configured via `DATABASE_URI`.
+- Google Cloud Storage is used for storing provider account information.
 
 ## License
 

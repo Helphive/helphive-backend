@@ -15,19 +15,19 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@v3
               with:
-                  node-version: "20.15.0"
+                  node-version-file: .nvmrc
 
             - name: Install dependencies for backend
               run: |
-                  yarn install
+                  npm install
 
             - name: Run ESLint on backend
               run: |
-                  yarn lint --fix
+                  npm run lint --fix
 
             - name: Run Prettier (check formatting) on backend
               run: |
-                  yarn format --write
+                  npm run format --write
 
             - name: Commit and push changes if any
               run: |

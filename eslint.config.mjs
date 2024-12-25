@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const gitignorePath = path.resolve(__dirname, ".gitignore");
+const eslintIgnorePath = path.resolve(__dirname, ".eslintignore");
 
 export default [
-	includeIgnoreFile(gitignorePath),
+	includeIgnoreFile(eslintIgnorePath),
 	...tseslint.configs.recommended,
 	{
 		ignores: ["logs/**/*", "dist/**/*", "eslint.config.mjs"],

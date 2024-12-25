@@ -292,7 +292,7 @@ export const handleUpdateProviderAccountRequestStatus = async (req: Request, res
 
 		await providerAccountRequest.save();
 
-		const user = await UserModel.findOne({ providerApplications: providerAccountRequestId }).exec();
+		const user = (await UserModel.findOne({ providerApplications: providerAccountRequestId }).exec()) as any;
 		if (user) {
 			const profileFilePath = providerAccountRequest.profile;
 			const userId = user._id.toString();

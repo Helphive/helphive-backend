@@ -3,9 +3,12 @@ import bcrypt from "bcrypt";
 import jwt, { VerifyErrors } from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import UserModel from "../dal/models/user.model";
-import { oneSignalApi, sendNotification } from "./service-accounts/onesignal";
+import { oneSignalApi } from "./service-accounts/onesignal";
 import mongoose from "mongoose";
 import BookingModel from "../dal/models/booking.model";
+import PaymentModel from "../dal/models/payment.model";
+import EarningModel from "../dal/models/earning.model";
+import { sendBookingCancelledNotification, sendBookingCompletedNotification } from "./utils/auth.utils";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
 const refreshTokenKey = process.env.REFRESH_TOKEN_SECRET || "";
@@ -321,7 +324,7 @@ export const handleGetUserInfo = async (req: Request, res: Response) => {
 	}
 };
 
-export const verifyEmail = async (req: Request, res: Response) => {
+export const handleVerifyEmail = async (req: Request, res: Response) => {
 	const { token } = req.query;
 
 	if (!token) {
@@ -364,7 +367,7 @@ export const verifyEmail = async (req: Request, res: Response) => {
 	}
 };
 
-export const resetPassword = async (req: Request, res: Response) => {
+export const handleResetPassword = async (req: Request, res: Response) => {
 	const { token } = req.body;
 
 	if (!token) {
@@ -418,7 +421,7 @@ export const handleOneSignalSetup = async (user: any) => {
 export const handleCompleteBooking = async (req: Request, res: Response) => {
 	try {
 		const userEmail = req.user;
-		const user = await UserModel.findOne({ email: userEmail });
+		const user = (await UserModel.findOne({ email: userEmail })) as unknown as any;
 		if (!user) {
 			return res.status(404).json({ message: "User not found." });
 		}
@@ -435,13 +438,26 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 			return res.status(404).json({ message: "Booking not found." });
 		}
 
-		if (![booking.userId._id.toString(), booking.providerId._id.toString()].includes(user._id.toString())) {
+		if (
+			![booking.userId._id.toString(), booking.providerId._id.toString()].includes((user as any)._id.toString())
+		) {
 			return res.status(403).json({ message: "User not authorized to complete this booking." });
 		}
 
 		if (booking.status !== "in progress") {
 			return res.status(400).json({ message: "Booking is not in progress." });
 		}
+
+		const payment = await PaymentModel.findOne({ bookingId: booking._id });
+		if (!payment || !payment.paymentIntentId) {
+			return res.status(400).json({ message: "Payment not found for this booking." });
+		}
+
+		await EarningModel.create({
+			bookingId: booking._id,
+			amount: payment.amount,
+			date: new Date(),
+		});
 
 		booking.status = "completed";
 		booking.completedAt = new Date();
@@ -459,40 +475,6 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
-	}
-};
-
-const sendBookingCompletedNotification = async (userId: string, providerId: string, bookingId: string) => {
-	try {
-		const notificationMessage1 = {
-			include_aliases: { external_id: [userId] },
-			contents: { en: `Booking Complete` },
-			headings: { en: "You got the requested service." },
-			data: {
-				screen: "BookingDetails",
-				bookingId: bookingId,
-			},
-		};
-		const notificationMessage2 = {
-			include_aliases: { external_id: [providerId] },
-			contents: { en: `Booking Complete` },
-			headings: { en: "You job is now complete." },
-			data: {
-				screen: "MyOrderDetails",
-				bookingId: bookingId,
-			},
-		};
-		console.log(notificationMessage1);
-		console.log(notificationMessage2);
-
-		await sendNotification(notificationMessage1);
-		await sendNotification(notificationMessage2);
-		console.log("Notification sent to ids: ", userId);
-	} catch (error: any) {
-		console.error(
-			`Error sending booking notification for booking ID ${bookingId} to available providers:`,
-			error.response,
-		);
 	}
 };
 
@@ -516,7 +498,9 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 			return res.status(404).json({ message: "Booking not found." });
 		}
 
-		if (![booking.userId._id.toString(), booking.providerId._id.toString()].includes(user._id.toString())) {
+		if (
+			![booking.userId._id.toString(), booking.providerId._id.toString()].includes((user as any)._id.toString())
+		) {
 			return res.status(403).json({ message: "User not authorized to cancel this booking." });
 		}
 
@@ -541,36 +525,5 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
-	}
-};
-
-const sendBookingCancelledNotification = async (userId: string, providerId: string, bookingId: string) => {
-	try {
-		const notificationMessage1 = {
-			include_aliases: { external_id: [userId] },
-			contents: { en: `Booking Cancelled` },
-			headings: { en: "Your booking has been cancelled." },
-			data: {
-				screen: "BookingDetails",
-				bookingId: bookingId,
-			},
-		};
-		const notificationMessage2 = {
-			include_aliases: { external_id: [providerId] },
-			contents: { en: `Booking Cancelled` },
-			headings: { en: "A booking has been cancelled." },
-			data: {
-				screen: "MyOrderDetails",
-				bookingId: bookingId,
-			},
-		};
-		console.log(notificationMessage1);
-		console.log(notificationMessage2);
-
-		await sendNotification(notificationMessage1);
-		await sendNotification(notificationMessage2);
-		console.log("Notification sent to ids: ", userId);
-	} catch (error: any) {
-		console.error(`Error sending booking cancellation notification for booking ID ${bookingId}:`, error.response);
 	}
 };

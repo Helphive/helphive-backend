@@ -1,14 +1,20 @@
 import { Storage } from "@google-cloud/storage";
-import path from "path";
+import {
+	PROVIDER_ACCOUNT_BUCKET,
+	USER_PROFILES_BUCKET,
+	GOOGLE_CLOUD_PROJECT_ID,
+	GOOGLE_CLOUD_SERVICE_ACCOUNT_CLIENT_EMAIL,
+} from "../../config";
 
-const storageOptions =
-	process.env.NODE_ENV === "development"
-		? {
-				keyFilename: path.join(process.env.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT || ""),
-			}
-		: {};
+const storageOptions = {
+	projectId: GOOGLE_CLOUD_PROJECT_ID,
+	credentials: {
+		client_email: GOOGLE_CLOUD_SERVICE_ACCOUNT_CLIENT_EMAIL,
+		private_key: process.env.GOOGLE_CLOUD_KEY?.replace(/\\n/g, "\n"),
+	},
+};
 
 export const googleStorage = new Storage(storageOptions);
 
-export const providerAccountBucket = process.env.PROVIDER_ACCOUNT_BUCKET || "";
-export const userProfilesBucket = process.env.USER_PROFILES_BUCKET || "";
+export const providerAccountBucket = PROVIDER_ACCOUNT_BUCKET;
+export const userProfilesBucket = USER_PROFILES_BUCKET;

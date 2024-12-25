@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import connectDB from "./config/dbConn";
 import corsOptions from "./config/corsOptions";
 
+import { SERVER_BASE_URL } from "./config";
 import { logger } from "./middleware/logEvents";
 import { credentials } from "./middleware/credentials";
 import { errorHandler } from "./middleware/errorHandler";
@@ -20,37 +21,31 @@ import webhookRoute from "./routes/webhook.route";
 import { Server, WebSocket as WS } from "ws";
 import { handleProviderAvailabilityWebSocket } from "./controllers/user-controllers/provider-websocket";
 
+if (
+	!process.env.PORT ||
+	!process.env.NODE_ENV ||
+	!process.env.DATABASE_URI ||
+	!process.env.ACCESS_TOKEN_SECRET ||
+	!process.env.REFRESH_TOKEN_SECRET ||
+	!process.env.EMAIL_VERIFICATION_SECRET ||
+	!process.env.GOOGLE_CLOUD_SERVICE_ACCOUNT_PRIVATE_KEY ||
+	!process.env.RESEND_API_KEY ||
+	!process.env.RESEND_AUDIENCE_ID ||
+	!process.env.STRIPE_SECRET_KEY ||
+	!process.env.STRIPE_WEBHOOK_SECRET ||
+	!process.env.ONE_SIGNAL_APP_ID ||
+	!process.env.ONE_SIGNAL_REST_API_KEY
+) {
+	throw `Abort: You need to define variables in the .env file.`;
+}
+
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Start the server first
 const server = app.listen(PORT, () => {
-	if (
-		!process.env.PORT ||
-		!process.env.NODE_ENV ||
-		!process.env.CLIENT_BASE_URL ||
-		!process.env.DATABASE_URI ||
-		!process.env.ACCESS_TOKEN_SECRET ||
-		!process.env.REFRESH_TOKEN_SECRET ||
-		!process.env.EMAIL_VERIFICATION_SECRET ||
-		!process.env.RESEND_API_KEY ||
-		!process.env.RESEND_AUDIENCE_ID ||
-		!process.env.VERIFICATION_EMAIL ||
-		!process.env.PROVIDER_ACCOUNT_BUCKET ||
-		!process.env.USER_PROFILES_BUCKET ||
-		!process.env.GOOGLE_CLOUD_STORAGE_SERVICE_ACCOUNT ||
-		!process.env.STRIPE_SECRET_KEY ||
-		!process.env.STRIPE_WEBHOOK_SECRET ||
-		!process.env.ONE_SIGNAL_APP_ID ||
-		!process.env.ONE_SIGNAL_REST_API_KEY
-	) {
-		throw `Abort: You need to define variables in the .env file.`;
-	}
-
-	console.log(`Server is running on http://localhost:${PORT}`);
+	console.log(`Server is running at ${SERVER_BASE_URL}`);
 });
 
-// Connect to MongoDB in parallel
 connectDB();
 
 app.use(logger);
@@ -110,7 +105,7 @@ wsServer.on("listening", () => {
 });
 wsServer.on("connection", (ws: WS, req: Request) => {
 	console.log("Connection established.");
-	const url = new URL(req.url || "", `http://localhost:8080`);
+	const url = new URL(req.url || "", SERVER_BASE_URL);
 	const userEmail = url.searchParams.get("email");
 	if (!userEmail) {
 		ws.send(JSON.stringify({ error: "User email not found in URL parameters." }));

@@ -71,7 +71,7 @@
 		"typescript-eslint": "^8.14.0"
 	},
 	"engines": {
-		"node": "20.15.0"
+		"node": "23.5.0"
 	},
 	"lint-staged": {
 		"**/*.{js,jsx,ts,tsx,json,css,md}": [

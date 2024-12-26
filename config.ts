@@ -1,5 +1,4 @@
 const NODE_ENV = (process.env.NODE_ENV || "development") as "development" | "production";
-const PORT = process.env.PORT || 8080;
 
 type Config = {
 	development: { CLIENT_BASE_URL: string; SERVER_BASE_URL: string };
@@ -15,8 +14,8 @@ type Config = {
 
 const config: Config = {
 	development: {
-		CLIENT_BASE_URL: `http://localhost:${PORT}`,
-		SERVER_BASE_URL: `http://localhost:${PORT}`,
+		CLIENT_BASE_URL: `https://ram-strong-cat.ngrok-free.app`,
+		SERVER_BASE_URL: `https://ram-strong-cat.ngrok-free.app`,
 	},
 	production: {
 		CLIENT_BASE_URL: "https://api.helphivenow.com",

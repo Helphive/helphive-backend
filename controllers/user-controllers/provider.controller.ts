@@ -349,3 +349,46 @@ export const handleGetEarnings = async (req: Request, res: Response) => {
 		return res.status(500).json({ message: "Internal server error" });
 	}
 };
+
+export const handleWithdrawEarnings = async (req: Request, res: Response) => {
+	const email = req.user;
+
+	try {
+		const user = await UserModel.findOne({ email: email }).select("stripeConnectedAccountId");
+		if (!user) {
+			return res.status(404).json({ message: "User not found" });
+		}
+
+		const providerBookings = await BookingModel.find({
+			providerId: user._id,
+			status: "completed",
+		});
+
+		const earnings = await EarningModel.find({
+			bookingId: { $in: providerBookings.map((booking) => booking._id) },
+		}).sort({ createdAt: -1 });
+
+		let availableBalance = earnings
+			.filter((earning) => earning.status === "pending")
+			.reduce((total, earning) => total + earning.amount, 0);
+
+		const cutPercentage = 0.2;
+		const cutAmount = availableBalance * cutPercentage;
+		availableBalance -= cutAmount;
+
+		const paymentIntent = await stripe.paymentIntents.create({
+			amount: availableBalance * 100,
+			currency: "usd",
+			transfer_group: (user._id as string).toString(),
+			application_fee_amount: cutAmount * 100,
+			transfer_data: {
+				destination: user.stripeConnectedAccountId,
+			},
+		});
+
+		return res.status(200).json({ paymentIntent });
+	} catch (error) {
+		console.error("Error withdrawing provider earnings:", error);
+		return res.status(500).json({ message: "Internal server error" });
+	}
+};

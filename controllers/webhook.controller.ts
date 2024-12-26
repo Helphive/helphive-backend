@@ -99,3 +99,9 @@ const sendBookingNotification = async (bookingId: string) => {
 		);
 	}
 };
+
+export const handleGoogleTasksPaymentTrigger = async (req: Request, res: Response) => {
+	const { bookingId } = req.body;
+	await sendBookingNotification(bookingId);
+	return res.status(200).json({ message: "Payment trigger sent" });
+};

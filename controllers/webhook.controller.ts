@@ -1,9 +1,9 @@
 import { Request, Response } from "express";
 import stripe from "./service-accounts/stripe";
-import PaymentModel from "../dal/models/payment.model";
 import { sendNotification } from "./service-accounts/onesignal";
-import BookingModel from "../dal/models/booking.model";
 import UserModel from "../dal/models/user.model";
+import BookingModel from "../dal/models/booking.model";
+import PaymentModel from "../dal/models/payment.model";
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 

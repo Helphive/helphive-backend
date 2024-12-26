@@ -335,13 +335,9 @@ export const handleGetEarnings = async (req: Request, res: Response) => {
 			bookingId: { $in: providerBookings.map((booking) => booking._id) },
 		}).sort({ createdAt: -1 });
 
-		let availableBalance = earnings
+		const availableBalance = earnings
 			.filter((earning) => earning.status === "pending")
 			.reduce((total, earning) => total + earning.amount, 0);
-
-		const cutPercentage = 0.2;
-		const cutAmount = availableBalance * cutPercentage;
-		availableBalance -= cutAmount;
 
 		return res.status(200).json({ earnings, availableBalance });
 	} catch (error) {

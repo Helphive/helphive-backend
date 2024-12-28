@@ -10,6 +10,7 @@ import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
 import EarningModel from "../../dal/models/earning.model";
 import { generateAccountLink, sendBookingStartedNotification } from "./utils/provider.utils";
+import PayoutModel from "../../dal/models/payout.model";
 
 declare module "express" {
 	interface Request {
@@ -303,6 +304,13 @@ export const handleGetStripeConnectedAccount = async (req: Request, res: Respons
 			const account = await stripe.accounts.create({
 				type: "express",
 				email: req.body.email,
+				settings: {
+					payouts: {
+						schedule: {
+							interval: "manual",
+						},
+					},
+				},
 			});
 
 			connectedAccountId = account.id;
@@ -344,45 +352,116 @@ export const handleGetEarnings = async (req: Request, res: Response) => {
 	}
 };
 
-export const handleWithdrawEarnings = async (req: Request, res: Response) => {
+export const handleCreatePayout = async (req: Request, res: Response) => {
+	try {
+		const email = req.user;
+		const amount = req.body.amount;
+
+		if (!amount || isNaN(amount) || amount <= 0) {
+			return res.status(400).json({ message: "Valid amount is required." });
+		}
+
+		const user = await UserModel.findOne({ email });
+		if (!user) {
+			return res.status(404).json({ message: "User not found." });
+		}
+
+		if (!user.stripeConnectedAccountId) {
+			return res.status(400).json({ message: "User does not have a Stripe connected account." });
+		}
+
+		if (user.availableBalance < amount) {
+			return res.status(400).json({ message: "Insufficient balance for payout." });
+		}
+
+		const externalAccounts = await stripe.accounts.listExternalAccounts(user.stripeConnectedAccountId);
+
+		if (!externalAccounts.data.length) {
+			return res.status(400).json({ message: "No external accounts linked to this account." });
+		}
+
+		const payout = await stripe.payouts.create(
+			{
+				amount: Math.round(amount * 100),
+				currency: "usd",
+			},
+			{
+				stripeAccount: user.stripeConnectedAccountId,
+			},
+		);
+
+		const payoutDetails = await stripe.payouts.retrieve(payout.id, {
+			stripeAccount: user.stripeConnectedAccountId,
+		});
+
+		const destinationDetails =
+			payoutDetails.destination && typeof payoutDetails.destination === "string"
+				? await stripe.accounts.retrieveExternalAccount(
+						user.stripeConnectedAccountId,
+						payoutDetails.destination,
+					)
+				: null;
+
+		const destinationInfo = destinationDetails
+			? {
+					type: destinationDetails.object,
+					last4: destinationDetails.last4,
+					country: destinationDetails.country || null,
+					currency: destinationDetails.currency || null,
+				}
+			: { type: "unknown", last4: null, country: null, currency: null };
+
+		const payoutRecord = await PayoutModel.create({
+			userId: user._id,
+			amount: amount,
+			currency: "usd",
+			payoutId: payout.id,
+			status: payout.status,
+			paymentMethod: "stripe",
+			destinationAccount: user.stripeConnectedAccountId,
+			destinationDetails: destinationInfo,
+		});
+
+		user.availableBalance -= amount;
+		await user.save();
+
+		return res.status(200).json({
+			success: true,
+			payout: payoutRecord,
+		});
+	} catch (error: any) {
+		console.error("Error creating payout:", error);
+
+		if (error.type === "StripeInvalidRequestError") {
+			return res.status(400).json({ message: error.message });
+		}
+
+		return res.status(500).json({ message: "Internal server error" });
+	}
+};
+
+export const handleGetStripeExpressLoginLink = async (req: Request, res: Response) => {
 	const email = req.user;
 
 	try {
-		const user = await UserModel.findOne({ email: email }).select("stripeConnectedAccountId");
+		const user = await UserModel.findOne({ email: email });
 		if (!user) {
 			return res.status(404).json({ message: "User not found" });
 		}
 
-		const providerBookings = await BookingModel.find({
-			providerId: user._id,
-			status: "completed",
-		});
+		if (!user.stripeConnectedAccountId) {
+			return res.status(400).json({ message: "Stripe connected account not found" });
+		}
 
-		const earnings = await EarningModel.find({
-			bookingId: { $in: providerBookings.map((booking) => booking._id) },
-		}).sort({ createdAt: -1 });
+		const account = await stripe.accounts.retrieve(user.stripeConnectedAccountId);
+		if (!account.details_submitted) {
+			return res.status(400).json({ message: "Account details not submitted" });
+		}
 
-		let availableBalance = earnings
-			.filter((earning) => earning.status === "pending")
-			.reduce((total, earning) => total + earning.amount, 0);
-
-		const cutPercentage = 0.2;
-		const cutAmount = availableBalance * cutPercentage;
-		availableBalance -= cutAmount;
-
-		const paymentIntent = await stripe.paymentIntents.create({
-			amount: availableBalance * 100,
-			currency: "usd",
-			transfer_group: (user._id as string).toString(),
-			application_fee_amount: cutAmount * 100,
-			transfer_data: {
-				destination: user.stripeConnectedAccountId,
-			},
-		});
-
-		return res.status(200).json({ paymentIntent });
+		const loginLink = await stripe.accounts.createLoginLink(user.stripeConnectedAccountId);
+		return res.status(200).json({ loginLink });
 	} catch (error) {
-		console.error("Error withdrawing provider earnings:", error);
+		console.error("Error getting Stripe express login link:", error);
 		return res.status(500).json({ message: "Internal server error" });
 	}
 };

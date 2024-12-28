@@ -5,7 +5,9 @@ export interface IEarning extends Document {
 	amount: number;
 	date: Date;
 	status: "pending" | "completed" | "cancelled";
-	paidDate?: Date;
+	completionDate?: Date;
+	cancellationDate?: Date;
+	cancellationReason?: string;
 }
 
 const earningSchema = new Schema<IEarning>(
@@ -14,7 +16,9 @@ const earningSchema = new Schema<IEarning>(
 		amount: { type: Number, required: true },
 		date: { type: Date, default: Date.now },
 		status: { type: String, enum: ["pending", "completed", "cancelled"], default: "pending" },
-		paidDate: { type: Date, default: null },
+		completionDate: { type: Date, default: null },
+		cancellationDate: { type: Date, default: null },
+		cancellationReason: { type: String, default: null },
 	},
 	{
 		timestamps: true,

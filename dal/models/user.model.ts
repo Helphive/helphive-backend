@@ -33,6 +33,7 @@ interface IUser extends Document {
 	isProviderAvailable: boolean;
 	selectedJobTypes: JobType[];
 	stripeConnectedAccountId: string;
+	availableBalance: number;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -91,6 +92,7 @@ const userSchema = new Schema<IUser>(
 			default: [],
 		},
 		stripeConnectedAccountId: { type: String, default: "" },
+		availableBalance: { type: Number, default: 0, min: 0 },
 	},
 	{
 		timestamps: true,

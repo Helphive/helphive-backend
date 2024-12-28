@@ -7,17 +7,17 @@ import mongoose from "mongoose";
 import connectDB from "./config/dbConn";
 import corsOptions from "./config/corsOptions";
 
-import { SERVER_BASE_URL } from "./config";
+import { SERVER_BASE_URL } from "./config/config";
 import { logger } from "./middleware/logEvents";
 import { credentials } from "./middleware/credentials";
 import { errorHandler } from "./middleware/errorHandler";
 
 dotenv.config();
 
-import authRoute from "./routes/auth.route";
+import authRoute from "./routes/user-routes/auth.route";
 import adminRoute from "./routes/admin.route";
 import emailRoute from "./routes/email.route";
-import webhookRoute from "./routes/webhook.route";
+import webhookRoute from "./routes/webhook-routes/webhook.route";
 import { Server, WebSocket as WS } from "ws";
 import { handleProviderAvailabilityWebSocket } from "./controllers/user-controllers/provider-websocket";
 
@@ -53,7 +53,7 @@ app.use(credentials);
 app.use(cors(corsOptions));
 app.use(express.urlencoded({ extended: false }));
 
-app.use("/webhook", express.raw({ type: "application/json" }), webhookRoute);
+app.use("/webhook", webhookRoute);
 
 app.use(express.json());
 app.use(cookieParser());

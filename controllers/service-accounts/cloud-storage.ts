@@ -4,7 +4,7 @@ import {
 	USER_PROFILES_BUCKET,
 	GOOGLE_CLOUD_PROJECT_ID,
 	GOOGLE_CLOUD_SERVICE_ACCOUNT_CLIENT_EMAIL,
-} from "../../config";
+} from "../../config/config";
 
 const storageOptions = {
 	projectId: GOOGLE_CLOUD_PROJECT_ID,
@@ -14,7 +14,7 @@ const storageOptions = {
 	},
 };
 
-export const googleStorage = new Storage(storageOptions);
+export const googleCloudStorage = new Storage(storageOptions);
 
 export const providerAccountBucket = PROVIDER_ACCOUNT_BUCKET;
 export const userProfilesBucket = USER_PROFILES_BUCKET;

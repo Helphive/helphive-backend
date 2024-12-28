@@ -6,7 +6,7 @@ import {
 	handleGetBookingById,
 	handleApproveStartJobRequest,
 } from "../../controllers/user-controllers/user.controller";
-import { validateCreateBookingFields } from "../../controllers/validators/user.validators";
+import { validateCreateBookingFields } from "../../controllers/user-controllers/validators/user.validators";
 
 const userRoute = express.Router();
 

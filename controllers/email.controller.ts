@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import NotionMagicLinkEmail from "../emails/verificationEmail";
 import NotionResetPasswordEmail from "../emails/resetPasswordEmail";
 import UserModel from "../dal/models/user.model";
-import { CLIENT_BASE_URL, VERIFICATION_EMAIL } from "../config";
+import { CLIENT_BASE_URL, VERIFICATION_EMAIL } from "../config/config";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const resendAudienceId = process.env.RESEND_AUDIENCE_ID || "";

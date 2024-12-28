@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { validationResult } from "express-validator";
-import { googleStorage, providerAccountBucket } from "../service-accounts/cloud-storage";
+import { googleCloudStorage, providerAccountBucket } from "../service-accounts/cloud-storage";
 import stripe from "../service-accounts/stripe";
 
 import UserModel from "../../dal/models/user.model";
@@ -51,7 +51,7 @@ export const handleRequestProviderAccount = async (req: Request, res: Response) 
 		const jobTypes = req.body.jobTypes ? JSON.parse(req.body.jobTypes) : {};
 
 		async function uploadFile(file: Express.Multer.File, filePath: string): Promise<void> {
-			await googleStorage.bucket(providerAccountBucket).file(filePath).save(file.buffer);
+			await googleCloudStorage.bucket(providerAccountBucket).file(filePath).save(file.buffer);
 		}
 
 		const filePaths: { [key: string]: string } = {};
@@ -264,9 +264,10 @@ export const handleStartBooking = async (req: Request, res: Response) => {
 			return res.status(404).json({ message: "User or booking not found." });
 		}
 
-		if (booking.startDate.getTime() > new Date().getTime()) {
-			return res.status(400).json({ message: "Booking start time is not yet reached." });
-		}
+		// REQUIRES ATTENTION
+		// if (booking.startDate.getTime() > new Date().getTime()) {
+		// 	return res.status(400).json({ message: "Booking start time is not yet reached." });
+		// }
 
 		if (booking.providerId?.toString() != user._id?.toString()) {
 			return res.status(400).json({ message: "This is not the provider for this booking." });
@@ -321,7 +322,7 @@ export const handleGetEarnings = async (req: Request, res: Response) => {
 	const email = req.user;
 
 	try {
-		const user = await UserModel.findOne({ email: email }).select("stripeConnectedAccountId");
+		const user = await UserModel.findOne({ email: email });
 		if (!user) {
 			return res.status(404).json({ message: "User not found" });
 		}
@@ -335,10 +336,7 @@ export const handleGetEarnings = async (req: Request, res: Response) => {
 			bookingId: { $in: providerBookings.map((booking) => booking._id) },
 		}).sort({ createdAt: -1 });
 
-		const availableBalance = earnings
-			.filter((earning) => earning.status === "pending")
-			.reduce((total, earning) => total + earning.amount, 0);
-
+		const availableBalance = user.availableBalance || 0;
 		return res.status(200).json({ earnings, availableBalance });
 	} catch (error) {
 		console.error("Error getting provider earnings:", error);

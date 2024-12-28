@@ -8,7 +8,7 @@ import {
 	handleUpdateProviderAccountRequestStatus,
 	handleGetProviderAccountRequestsComplete,
 } from "../controllers/admin.controller.";
-import { validateSignupFields, validateLoginFields } from "../controllers/validators/auth.validators";
+import { validateSignupFields, validateLoginFields } from "../controllers/user-controllers/validators/auth.validators";
 
 const adminRoute = express.Router();
 

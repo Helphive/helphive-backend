@@ -1,6 +1,6 @@
 import stripe from "../../service-accounts/stripe";
 import { sendNotification } from "../../service-accounts/onesignal";
-import { CLIENT_BASE_URL } from "../../../config";
+import { CLIENT_BASE_URL } from "../../../config/config";
 
 export const sendBookingStartedNotification = async (userId: string, bookingId: string) => {
 	try {

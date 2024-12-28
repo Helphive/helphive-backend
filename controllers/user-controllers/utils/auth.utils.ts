@@ -1,4 +1,6 @@
-import { sendNotification } from "../service-accounts/onesignal";
+import { sendNotification } from "../../service-accounts/onesignal";
+import { googleCloudTasks } from "../../service-accounts/cloud-tasks";
+import { GOOGLE_CLOUD_TASKS_QUEUE_PATH, SERVER_BASE_URL } from "../../../config/config";
 
 export const sendBookingCompletedNotification = async (userId: string, providerId: string, bookingId: string) => {
 	try {
@@ -63,4 +65,29 @@ export const sendBookingCancelledNotification = async (userId: string, providerI
 	} catch (error: any) {
 		console.error(`Error sending booking cancellation notification for booking ID ${bookingId}:`, error.response);
 	}
+};
+
+export const createGoogleCloudTaskPaymentTrigger = async (bookingId: string, scheduleDate: Date) => {
+	const url = `${SERVER_BASE_URL}/webhook/google-cloud-tasks/earning-complete`;
+	const payload = {
+		bookingId,
+	};
+	const task = {
+		parent: GOOGLE_CLOUD_TASKS_QUEUE_PATH,
+		task: {
+			httpRequest: {
+				httpMethod: "POST" as const,
+				url,
+				body: Buffer.from(JSON.stringify(payload)).toString("base64"),
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${process.env.GOOGLE_CLOUD_TASKS_SECRET}`,
+				},
+			},
+			scheduleTime: {
+				seconds: scheduleDate.getTime() / 1000,
+			},
+		},
+	};
+	await googleCloudTasks.createTask(task);
 };

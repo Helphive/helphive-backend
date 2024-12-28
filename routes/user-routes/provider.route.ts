@@ -11,7 +11,7 @@ import {
 	handleGetStripeConnectedAccount,
 	handleGetEarnings,
 } from "../../controllers/user-controllers/provider.controller";
-import { validateRequestProviderAccountFields } from "../../controllers/validators/provider.validators";
+import { validateRequestProviderAccountFields } from "../../controllers/user-controllers/validators/provider.validators";
 
 const upload = multer();
 

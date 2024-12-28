@@ -9,6 +9,7 @@ type Config = {
 		USER_PROFILES_BUCKET: string;
 		GOOGLE_CLOUD_PROJECT_ID: string;
 		GOOGLE_CLOUD_SERVICE_ACCOUNT_CLIENT_EMAIL: string;
+		GOOGLE_CLOUD_TASKS_QUEUE_PATH: string;
 	};
 };
 
@@ -27,6 +28,7 @@ const config: Config = {
 		USER_PROFILES_BUCKET: "helphive-users",
 		GOOGLE_CLOUD_PROJECT_ID: "helphive",
 		GOOGLE_CLOUD_SERVICE_ACCOUNT_CLIENT_EMAIL: "helphive-backend-server@helphive.iam.gserviceaccount.com",
+		GOOGLE_CLOUD_TASKS_QUEUE_PATH: "projects/helphive/locations/us-central1/queues/helphive-app-queue",
 	},
 };
 
@@ -37,4 +39,5 @@ export const {
 	USER_PROFILES_BUCKET,
 	GOOGLE_CLOUD_PROJECT_ID,
 	GOOGLE_CLOUD_SERVICE_ACCOUNT_CLIENT_EMAIL,
+	GOOGLE_CLOUD_TASKS_QUEUE_PATH,
 } = config.common;

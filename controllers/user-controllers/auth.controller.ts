@@ -2,13 +2,17 @@ import { NextFunction, Request, Response } from "express";
 import bcrypt from "bcrypt";
 import jwt, { VerifyErrors } from "jsonwebtoken";
 import { validationResult } from "express-validator";
-import UserModel from "../dal/models/user.model";
-import { oneSignalApi } from "./service-accounts/onesignal";
+import UserModel from "../../dal/models/user.model";
+import { oneSignalApi } from "../service-accounts/onesignal";
 import mongoose from "mongoose";
-import BookingModel from "../dal/models/booking.model";
-import PaymentModel from "../dal/models/payment.model";
-import EarningModel from "../dal/models/earning.model";
-import { sendBookingCancelledNotification, sendBookingCompletedNotification } from "./utils/auth.utils";
+import BookingModel from "../../dal/models/booking.model";
+import PaymentModel from "../../dal/models/payment.model";
+import EarningModel from "../../dal/models/earning.model";
+import {
+	createGoogleCloudTaskPaymentTrigger,
+	sendBookingCancelledNotification,
+	sendBookingCompletedNotification,
+} from "./utils/auth.utils";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
 const refreshTokenKey = process.env.REFRESH_TOKEN_SECRET || "";
@@ -452,6 +456,13 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 		if (!payment || !payment.paymentIntentId) {
 			return res.status(400).json({ message: "Payment not found for this booking." });
 		}
+
+		// REQUIRES ATTENTION
+		// const fiveDaysFromNow = new Date();
+		// fiveDaysFromNow.setDate(fiveDaysFromNow.getDate() + 5);
+		const fiveMinutesFromNow = new Date();
+		fiveMinutesFromNow.setMinutes(fiveMinutesFromNow.getMinutes() + 5);
+		await createGoogleCloudTaskPaymentTrigger(bookingId, fiveMinutesFromNow);
 
 		await EarningModel.create({
 			bookingId: booking._id,

@@ -12,21 +12,21 @@ import {
 	handleResetPassword,
 	handleCompleteBooking,
 	handleCancelBooking,
-} from "../controllers/auth.controller";
+} from "../../controllers/user-controllers/auth.controller";
 
-import { createContact, sendMagicLinkEmail } from "../controllers/email.controller";
+import { createContact, sendMagicLinkEmail } from "../../controllers/email.controller";
 
-import userRoute from "./user-routes/user.route";
-import providerRoute from "./user-routes/provider.route";
+import userRoute from "./user.route";
+import providerRoute from "./provider.route";
 
 import {
 	validateSignupFields,
 	validateLoginFields,
 	validateResetPasswordFields,
-} from "../controllers/validators/auth.validators";
+} from "../../controllers/user-controllers/validators/auth.validators";
 
-import { verifyJWT } from "../middleware/verifyJWT";
-import { verifyRoles } from "../middleware/verfiyRoles";
+import { verifyJWT } from "../../middleware/verifyJWT";
+import { verifyRoles } from "../../middleware/verfiyRoles";
 
 const authRoute = express.Router();
 

@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import jwt, { VerifyErrors } from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import { GetSignedUrlConfig } from "@google-cloud/storage";
-import { googleStorage, providerAccountBucket, userProfilesBucket } from "./service-accounts/cloud-storage";
+import { googleCloudStorage, providerAccountBucket, userProfilesBucket } from "./service-accounts/cloud-storage";
 
 import Admin from "../dal/models/admin.model";
 import ProviderApplicationModel from "../dal/models/providerapplication.model";
@@ -272,7 +272,7 @@ async function generateSignedUrl(filePath: string): Promise<string> {
 	};
 
 	try {
-		const [url] = await googleStorage.bucket(providerAccountBucket).file(filePath).getSignedUrl(options);
+		const [url] = await googleCloudStorage.bucket(providerAccountBucket).file(filePath).getSignedUrl(options);
 		return url;
 	} catch (error) {
 		console.error(`Error generating signed URL for file ${filePath}:`, error);
@@ -301,10 +301,10 @@ export const handleUpdateProviderAccountRequestStatus = async (req: Request, res
 			const destinationPath = `${userId}/profile${fileExtension}`;
 
 			try {
-				await googleStorage
+				await googleCloudStorage
 					.bucket(providerAccountBucket)
 					.file(profileFilePath)
-					.copy(googleStorage.bucket(userProfilesBucket).file(destinationPath));
+					.copy(googleCloudStorage.bucket(userProfilesBucket).file(destinationPath));
 			} catch (error) {
 				console.error(`Error copying file to ${destinationPath}:`, error);
 				throw error;

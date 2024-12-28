@@ -1,9 +1,9 @@
 import { Request, Response } from "express";
-import stripe from "./service-accounts/stripe";
-import { sendNotification } from "./service-accounts/onesignal";
-import UserModel from "../dal/models/user.model";
-import BookingModel from "../dal/models/booking.model";
-import PaymentModel from "../dal/models/payment.model";
+import stripe from "../service-accounts/stripe";
+import { sendNotification } from "../service-accounts/onesignal";
+import UserModel from "../../dal/models/user.model";
+import BookingModel from "../../dal/models/booking.model";
+import PaymentModel from "../../dal/models/payment.model";
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 
@@ -98,10 +98,4 @@ const sendBookingNotification = async (bookingId: string) => {
 			error.response,
 		);
 	}
-};
-
-export const handleGoogleTasksPaymentTrigger = async (req: Request, res: Response) => {
-	const { bookingId } = req.body;
-	await sendBookingNotification(bookingId);
-	return res.status(200).json({ message: "Payment trigger sent" });
 };

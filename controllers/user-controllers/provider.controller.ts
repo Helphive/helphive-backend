@@ -344,8 +344,10 @@ export const handleGetEarnings = async (req: Request, res: Response) => {
 			bookingId: { $in: providerBookings.map((booking) => booking._id) },
 		}).sort({ createdAt: -1 });
 
+		const payouts = await PayoutModel.find({ userId: user._id }).sort({ createdAt: -1 });
+
 		const availableBalance = user.availableBalance || 0;
-		return res.status(200).json({ earnings, availableBalance });
+		return res.status(200).json({ availableBalance, earnings, payouts });
 	} catch (error) {
 		console.error("Error getting provider earnings:", error);
 		return res.status(500).json({ message: "Internal server error" });
@@ -357,7 +359,7 @@ export const handleCreatePayout = async (req: Request, res: Response) => {
 		const email = req.user;
 		const amount = req.body.amount;
 
-		if (!amount || isNaN(amount) || amount <= 0) {
+		if (!amount || isNaN(amount) || amount < 20 || !Number.isInteger(amount)) {
 			return res.status(400).json({ message: "Valid amount is required." });
 		}
 
@@ -371,13 +373,15 @@ export const handleCreatePayout = async (req: Request, res: Response) => {
 		}
 
 		if (user.availableBalance < amount) {
-			return res.status(400).json({ message: "Insufficient balance for payout." });
+			return res.status(400).json({ message: "You have insufficient balance for this payout." });
 		}
 
 		const externalAccounts = await stripe.accounts.listExternalAccounts(user.stripeConnectedAccountId);
 
 		if (!externalAccounts.data.length) {
-			return res.status(400).json({ message: "No external accounts linked to this account." });
+			return res
+				.status(400)
+				.json({ message: "Please add a bank account to your stripe account (External account)" });
 		}
 
 		const payout = await stripe.payouts.create(

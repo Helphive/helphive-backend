@@ -4,6 +4,7 @@ import { sendNotification } from "../service-accounts/onesignal";
 import UserModel from "../../dal/models/user.model";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
+import PayoutModel from "../../dal/models/payout.model";
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 
@@ -26,23 +27,19 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
 			updatePaymentStatus(paymentIntent.id, "completed");
 			break;
 
-		case "payment_intent.payment_failed":
-			const failedIntent = event.data.object;
-			console.log(`Payment failed: ${failedIntent.last_payment_error?.message}`);
+		case "payout.paid":
+			const payout = event.data.object;
+			updatePayoutStatus(payout.id, "paid");
 			break;
 
-		case "payment_intent.canceled":
-			console.log("Payment was canceled.");
+		case "payout.failed":
+			const failedPayout = event.data.object;
+			updatePayoutStatus(failedPayout.id, "failed");
 			break;
 
-		case "payment_intent.requires_action":
-			console.log("Payment requires further action.");
-			break;
-
-		// Optionally handle checkout session completion
-		case "checkout.session.completed":
-			const session = event.data.object;
-			console.log("Checkout session completed", session);
+		case "payout.canceled":
+			const canceledPayout = event.data.object;
+			updatePayoutStatus(canceledPayout.id, "cancelled");
 			break;
 
 		default:
@@ -97,5 +94,27 @@ const sendBookingNotification = async (bookingId: string) => {
 			`Error sending booking notification for booking ID ${bookingId} to available providers:`,
 			error.response,
 		);
+	}
+};
+
+const updatePayoutStatus = async (payoutId: string, status: "paid" | "failed" | "cancelled") => {
+	try {
+		const payout = await PayoutModel.findOne({ payoutId });
+		if (!payout) {
+			console.error(`Payout with ID ${payoutId} not found.`);
+			return;
+		}
+		payout.status = status;
+		if (status == "failed" || status == "cancelled") {
+			const user = await UserModel.findOne({ _id: payout.userId });
+			if (user) {
+				user.availableBalance += payout.amount;
+				await user.save();
+			}
+		}
+
+		await payout.save();
+	} catch (error) {
+		console.error(`Error updating payout status for payout ID ${payoutId}:`, error);
 	}
 };

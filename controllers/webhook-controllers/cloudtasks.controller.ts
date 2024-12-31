@@ -4,6 +4,8 @@ import EarningModel from "../../dal/models/earning.model";
 import UserModel from "../../dal/models/user.model";
 import stripe from "../service-accounts/stripe";
 
+import { sendNotification } from "../service-accounts/onesignal";
+
 export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: Response) => {
 	try {
 		const { bookingId } = req.body;
@@ -64,6 +66,8 @@ export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: R
 		provider.availableBalance += earning.amount;
 		await provider.save();
 
+		await sendPaymentNotification(provider._id as string, earning.amount);
+
 		return res.status(200).json({
 			message: "Payment processed successfully",
 			transferId: transfer.id,
@@ -76,5 +80,21 @@ export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: R
 		}
 
 		return res.status(500).json({ message: "Internal server error" });
+	}
+};
+
+const sendPaymentNotification = async (providerId: string, amount: number) => {
+	try {
+		const notificationMessage = {
+			include_aliases: { external_id: [providerId] },
+			contents: { en: `Your latest funds were released in your account 🎉` },
+			headings: { en: `$${amount} received in your account!` },
+			data: {
+				screen: "Earnings",
+			},
+		};
+		sendNotification(notificationMessage);
+	} catch (error) {
+		console.error(`Error sending payment notification for earning ID: `, error);
 	}
 };

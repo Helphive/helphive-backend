@@ -5,7 +5,7 @@ interface IPayout extends Document {
 	amount: number;
 	currency: string;
 	payoutId: string;
-	status: "pending" | "completed" | "failed";
+	status: "pending" | "paid" | "failed" | "cancelled";
 	destinationAccount: string;
 	destinationDetails: {
 		type: string; // "bank_account" or "card"
@@ -23,7 +23,7 @@ const payoutSchema = new Schema<IPayout>(
 		amount: { type: Number, required: true },
 		currency: { type: String, required: true, default: "usd" },
 		payoutId: { type: String, required: true, unique: true },
-		status: { type: String, enum: ["pending", "completed", "failed"], default: "pending" },
+		status: { type: String, enum: ["pending", "paid", "failed", "canceled"], default: "pending" },
 		destinationAccount: { type: String, required: true },
 		destinationDetails: {
 			type: {

@@ -23,7 +23,7 @@ const payoutSchema = new Schema<IPayout>(
 		amount: { type: Number, required: true },
 		currency: { type: String, required: true, default: "usd" },
 		payoutId: { type: String, required: true, unique: true },
-		status: { type: String, enum: ["pending", "paid", "failed", "canceled"], default: "pending" },
+		status: { type: String, enum: ["pending", "paid", "failed", "cancelled"], default: "pending" },
 		destinationAccount: { type: String, required: true },
 		destinationDetails: {
 			type: {

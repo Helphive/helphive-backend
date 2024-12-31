@@ -119,8 +119,11 @@ export const handleStripeConnectedPayoutsWebhook = async (req: Request, res: Res
 	return res.status(200).json({ message: "Stripe webhook received" });
 };
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const updatePayoutStatus = async (payoutId: string, status: "paid" | "failed" | "cancelled") => {
 	try {
+		await delay(5000);
 		const payout = await PayoutModel.findOne({ payoutId });
 		if (!payout) {
 			console.error(`Payout with ID ${payoutId} not found.`);

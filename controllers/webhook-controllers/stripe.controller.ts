@@ -7,6 +7,7 @@ import PaymentModel from "../../dal/models/payment.model";
 import PayoutModel from "../../dal/models/payout.model";
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
+const connectedEndpointSecret = process.env.STRIPE_CONNECTED_WEBHOOK_SECRET || "";
 
 export const handleStripeWebhook = async (req: Request, res: Response) => {
 	const sig = req.headers["stripe-signature"] || "";
@@ -25,21 +26,6 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
 		case "payment_intent.succeeded":
 			const paymentIntent = event.data.object;
 			updatePaymentStatus(paymentIntent.id, "completed");
-			break;
-
-		case "payout.paid":
-			const payout = event.data.object;
-			updatePayoutStatus(payout.id, "paid");
-			break;
-
-		case "payout.failed":
-			const failedPayout = event.data.object;
-			updatePayoutStatus(failedPayout.id, "failed");
-			break;
-
-		case "payout.canceled":
-			const canceledPayout = event.data.object;
-			updatePayoutStatus(canceledPayout.id, "cancelled");
 			break;
 
 		default:
@@ -95,6 +81,42 @@ const sendBookingNotification = async (bookingId: string) => {
 			error.response,
 		);
 	}
+};
+
+export const handleStripeConnectedPayoutsWebhook = async (req: Request, res: Response) => {
+	const sig = req.headers["stripe-signature"] || "";
+	const body = req.body;
+
+	let event;
+
+	try {
+		event = stripe.webhooks.constructEvent(body, sig, connectedEndpointSecret);
+	} catch (err: any) {
+		console.log(`Stripe Webhook signature verification failed:`, err.message);
+		return res.status(400).send(`Stripe Webhook Error: ${err.message}`);
+	}
+
+	switch (event.type) {
+		case "payout.paid":
+			const payout = event.data.object;
+			updatePayoutStatus(payout.id, "paid");
+			break;
+
+		case "payout.failed":
+			const failedPayout = event.data.object;
+			updatePayoutStatus(failedPayout.id, "failed");
+			break;
+
+		case "payout.canceled":
+			const canceledPayout = event.data.object;
+			updatePayoutStatus(canceledPayout.id, "cancelled");
+			break;
+
+		default:
+			console.log(`Unhandled event type ${event.type}`);
+	}
+
+	return res.status(200).json({ message: "Stripe webhook received" });
 };
 
 const updatePayoutStatus = async (payoutId: string, status: "paid" | "failed" | "cancelled") => {

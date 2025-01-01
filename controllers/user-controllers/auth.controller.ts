@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from "express";
+import path from "path";
 import bcrypt from "bcrypt";
 import jwt, { VerifyErrors } from "jsonwebtoken";
 import { validationResult } from "express-validator";
@@ -8,6 +9,7 @@ import mongoose from "mongoose";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
 import EarningModel from "../../dal/models/earning.model";
+import { googleCloudStorage, userProfilesBucket } from "../service-accounts/cloud-storage";
 import {
 	createGoogleCloudTaskPaymentTrigger,
 	sendBookingCancelledNotification,
@@ -536,5 +538,51 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
+	}
+};
+
+export const handleUpdateProfile = async (req: Request, res: Response) => {
+	try {
+		const userEmail = req.user;
+		const user = await UserModel.findOne({ email: userEmail });
+		if (!user) {
+			return res.status(404).json({ message: "User not found." });
+		}
+
+		const { firstName, lastName, phone, street, country, state, city } = req.body;
+
+		if (firstName) user.firstName = firstName;
+		if (lastName) user.lastName = lastName;
+		if (phone) user.phone = phone;
+		if (street) user.street = street.toLowerCase();
+		if (country) user.country = country.toLowerCase();
+		if (state) user.state = state.toLowerCase();
+		if (city) user.city = city.toLowerCase();
+
+		if (req.files && (req.files as { [fieldname: string]: Express.Multer.File[] }).profile) {
+			const profileFile = (req.files as { [fieldname: string]: Express.Multer.File[] }).profile[0];
+			const userId = (user as any)._id.toString();
+			const fileExtension = path.extname(profileFile.originalname);
+			const destinationPath = `${userId}/profile${fileExtension}`;
+
+			try {
+				if (user.profile) {
+					await googleCloudStorage.bucket(userProfilesBucket).file(user.profile).delete();
+				}
+
+				await googleCloudStorage.bucket(userProfilesBucket).file(destinationPath).save(profileFile.buffer);
+				user.profile = destinationPath;
+			} catch (error) {
+				console.error(`Error uploading profile image to ${destinationPath}:`, error);
+				throw error;
+			}
+		}
+
+		await user.save();
+
+		res.status(200).json({ message: "Profile updated successfully." });
+	} catch (error) {
+		console.error("Error updating profile:", error);
+		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };

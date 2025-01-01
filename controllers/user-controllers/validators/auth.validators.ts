@@ -52,3 +52,21 @@ export const validateResetPasswordFields = [
 		.matches(/[^A-Za-z0-9]/)
 		.withMessage("Password must contain at least one special character"),
 ];
+
+export const validateUpdateProfileFields = [
+	body("firstName")
+		.optional()
+		.isLength({ min: 2, max: 50 })
+		.matches(NAME_REGEX)
+		.withMessage("First name must be 2-50 characters and valid."),
+	body("lastName")
+		.optional()
+		.isLength({ min: 2, max: 50 })
+		.matches(NAME_REGEX)
+		.withMessage("Last name must be 2-50 characters and valid."),
+	body("phone").optional().isString().withMessage("Phone number must be a string."),
+	body("country").optional().isString().withMessage("Country must be a string."),
+	body("state").optional().isString().withMessage("State must be a string."),
+	body("city").optional().isString().withMessage("City must be a string."),
+	body("street").optional().isString().withMessage("Street must be a string."),
+];

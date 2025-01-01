@@ -36,6 +36,11 @@ interface IUser extends Document {
 	availableBalance: number;
 	createdAt: Date;
 	updatedAt: Date;
+	phone: string;
+	country: string;
+	state: string;
+	city: string;
+	street: string;
 }
 
 const rolesSchema = new Schema<Roles>(
@@ -93,6 +98,11 @@ const userSchema = new Schema<IUser>(
 		},
 		stripeConnectedAccountId: { type: String, default: "" },
 		availableBalance: { type: Number, default: 0, min: 0 },
+		phone: { type: String, required: false },
+		country: { type: String, required: false },
+		state: { type: String, required: false },
+		city: { type: String, required: false },
+		street: { type: String, required: false },
 	},
 	{
 		timestamps: true,

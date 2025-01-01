@@ -57,11 +57,11 @@ Lint and format checks are automatically run on pull requests. Husky hooks ensur
 
 ### Scripts
 
-- **Start**: `npm start` - Start the development server with `nodemon` and `ts-node`.
-- **Build**: `npm build` - Compile TypeScript files to JavaScript.
-- **Lint**: `npm lint` - Run ESLint to check for code issues.
-- **Format**: `npm format` - Run Prettier to format code.
-- **Email Preview**: `npm email` - Preview email templates during development.
+- **Start**: `npm start` - Start the development server with `ts-node-dev` and `ts-node`.
+- **Build**: `npm run build` - Compile TypeScript files to JavaScript.
+- **Lint**: `npm run lint` - Run ESLint to check for code issues.
+- **Format**: `npm run format` - Run Prettier to format code.
+- **Email Preview**: `npm run email` - Preview email templates during development.
 
 ## Notes
 

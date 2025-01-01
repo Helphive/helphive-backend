@@ -311,6 +311,11 @@ export const handleUpdateProviderAccountRequestStatus = async (req: Request, res
 			}
 			user.profile = destinationPath;
 			user.providerStatus = status;
+			user.phone = providerAccountRequest.phone;
+			user.country = providerAccountRequest.country.toLowerCase();
+			user.state = providerAccountRequest.state.toLowerCase();
+			user.city = providerAccountRequest.city.toLowerCase();
+			user.street = providerAccountRequest.street.toLowerCase();
 			await user.save();
 		}
 

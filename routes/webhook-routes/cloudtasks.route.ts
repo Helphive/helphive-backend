@@ -1,6 +1,9 @@
 import express, { NextFunction, Request, Response } from "express";
 
-import { handleGoogleCloudTasksEarningComplete } from "../../controllers/webhook-controllers/cloudtasks.controller";
+import {
+	handleGoogleCloudTasksBookingExpired,
+	handleGoogleCloudTasksEarningComplete,
+} from "../../controllers/webhook-controllers/cloudtasks.controller";
 
 const cloudTasksRoute = express.Router();
 
@@ -13,5 +16,6 @@ const verifyHeader = (req: Request, res: Response, next: NextFunction) => {
 };
 
 cloudTasksRoute.post("/earning-complete", verifyHeader, handleGoogleCloudTasksEarningComplete);
+cloudTasksRoute.post("/booking-expired", verifyHeader, handleGoogleCloudTasksBookingExpired);
 
 export default cloudTasksRoute;

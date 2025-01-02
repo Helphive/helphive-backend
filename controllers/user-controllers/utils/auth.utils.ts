@@ -47,20 +47,20 @@ export const sendBookingCancelledNotification = async (userId: string, providerI
 				bookingId: bookingId,
 			},
 		};
-		const notificationMessage2 = {
-			include_aliases: { external_id: [providerId] },
-			contents: { en: `Booking Cancelled` },
-			headings: { en: "A booking has been cancelled." },
-			data: {
-				screen: "MyOrderDetails",
-				bookingId: bookingId,
-			},
-		};
-		console.log(notificationMessage1);
-		console.log(notificationMessage2);
-
 		await sendNotification(notificationMessage1);
-		await sendNotification(notificationMessage2);
+		if (providerId) {
+			const notificationMessage2 = {
+				include_aliases: { external_id: [providerId] },
+				contents: { en: `Booking Cancelled` },
+				headings: { en: "A booking has been cancelled." },
+				data: {
+					screen: "MyOrderDetails",
+					bookingId: bookingId,
+				},
+			};
+			await sendNotification(notificationMessage2);
+		}
+
 		console.log("Notification sent to ids: ", userId);
 	} catch (error: any) {
 		console.error(`Error sending booking cancellation notification for booking ID ${bookingId}:`, error.response);

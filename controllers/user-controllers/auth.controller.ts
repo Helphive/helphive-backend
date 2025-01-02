@@ -15,6 +15,7 @@ import {
 	sendBookingCancelledNotification,
 	sendBookingCompletedNotification,
 } from "./utils/auth.utils";
+import stripe from "../service-accounts/stripe";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
 const refreshTokenKey = process.env.REFRESH_TOKEN_SECRET || "";
@@ -507,12 +508,12 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 		const booking =
 			(await BookingModel.findById(bookingId).populate("providerId").populate("userId").exec()) || undefined;
 
-		if (!booking || !booking.providerId || !booking.userId) {
+		if (!booking || !booking.userId) {
 			return res.status(404).json({ message: "Booking not found." });
 		}
 
 		if (
-			![booking.userId._id.toString(), booking.providerId._id.toString()].includes((user as any)._id.toString())
+			![booking.userId._id.toString(), booking.providerId?._id.toString()].includes((user as any)._id.toString())
 		) {
 			return res.status(403).json({ message: "User not authorized to cancel this booking." });
 		}
@@ -528,9 +529,29 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 
 		await sendBookingCancelledNotification(
 			booking.userId._id?.toString(),
-			booking.providerId._id?.toString(),
+			booking.providerId ? booking.providerId._id.toString() : "",
 			bookingId,
 		);
+
+		const payment = await PaymentModel.findOne({ bookingId: booking._id });
+		if (payment && payment.paymentIntentId && payment.status === "completed") {
+			const paymentIntent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
+			if (paymentIntent.status === "succeeded") {
+				const refund = await stripe.refunds.create({
+					payment_intent: payment.paymentIntentId,
+				});
+				payment.refundStatus = "pending";
+				payment.refundId = refund.id;
+				payment.refundAmount = refund.amount / 100;
+				payment.refundCreated = new Date(refund.created * 1000);
+				payment.destinationDetails = {
+					type: refund.destination_details?.type,
+				};
+				await payment.save();
+			} else {
+				console.log(`Payment intent ${payment.paymentIntentId} was not paid, no refund needed.`);
+			}
+		}
 
 		res.status(200).json({ message: "Booking has been cancelled." });
 	} catch (error) {

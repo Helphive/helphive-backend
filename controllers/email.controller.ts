@@ -47,16 +47,15 @@ export const sendMagicLinkEmail = async (req: Request, res: Response) => {
 
 		const token = generateVerificationToken(user?._id as string, user?.email || "");
 		const verificationLink = `${CLIENT_BASE_URL}/auth/verify-email?token=${token}`;
-		const baseUrl = CLIENT_BASE_URL || "";
 
 		user.emailVerificationTokens.push(token);
 		await user.save();
 
 		const { data, error } = await resend.emails.send({
-			from: `HelpHive <${verificationEmail}>`,
+			from: `Helphive <${verificationEmail}>`,
 			to: [email],
 			subject: "Verify Your Email",
-			react: NotionMagicLinkEmail({ baseUrl: baseUrl, loginCode: verificationLink, verificationLink }),
+			react: NotionMagicLinkEmail({ loginCode: verificationLink, verificationLink }),
 		});
 		if (error) {
 			await UserModel.findOneAndDelete({ email });
@@ -82,16 +81,15 @@ export const sendResetPasswordEmail = async (req: Request, res: Response) => {
 
 		const token = generateVerificationToken(user?._id as string, user?.email || "");
 		const verificationLink = `${CLIENT_BASE_URL}/auth/reset-password?token=${token}`;
-		const baseUrl = CLIENT_BASE_URL || "";
 
 		user.resetPasswordTokens.push(token);
 		await user.save();
 
 		const { data, error } = await resend.emails.send({
-			from: `HelpHive <${verificationEmail}>`,
+			from: `Helphive <${verificationEmail}>`,
 			to: [email],
 			subject: "Reset Your Password",
-			react: NotionResetPasswordEmail({ baseUrl: baseUrl, loginCode: verificationLink, verificationLink }),
+			react: NotionResetPasswordEmail({ loginCode: verificationLink, verificationLink }),
 		});
 		if (error) {
 			throw new Error(`${error}`);

@@ -4,10 +4,17 @@ export interface Payment extends Document {
 	bookingId: string;
 	amount: number;
 	date: Date;
-	status: string;
+	status: "pending" | "completed" | "cancelled";
 	paymentIntentId: string;
 	clientSecret: string;
 	paymentMethod: string;
+	refundId: string;
+	refundStatus: "pending" | "succeeded" | "failed" | "cancelled";
+	refundCreated: Date;
+	refundAmount: number;
+	destinationDetails: {
+		type: string | undefined;
+	};
 }
 
 const PaymentSchema: Schema = new Schema(
@@ -19,6 +26,14 @@ const PaymentSchema: Schema = new Schema(
 		paymentIntentId: { type: String },
 		clientSecret: { type: String },
 		paymentMethod: { type: String },
+		refundId: { type: String },
+		refundStatus: { type: String, enum: ["pending", "succeeded", "failed", "cancelled"], default: "pending" },
+		refundCreated: { type: Date },
+		refundAmount: { type: Number },
+		destinationDetails: {
+			account: { type: String },
+			type: { type: String },
+		},
 	},
 	{
 		timestamps: true,

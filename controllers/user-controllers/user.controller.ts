@@ -6,7 +6,7 @@ import stripe from "../service-accounts/stripe";
 import UserModel from "../../dal/models/user.model";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
-import { sendBookingStartApprovedNotification } from "./utils/user.utils";
+import { createGoogleCloudTaskBookingExpiredTrigger, sendBookingStartApprovedNotification } from "./utils/user.utils";
 
 declare module "express" {
 	interface Request {
@@ -71,6 +71,11 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 		});
 		await newBooking.save();
 
+		await createGoogleCloudTaskBookingExpiredTrigger(
+			(newBooking._id as string).toString(),
+			new Date(newBooking.startDate.getTime()),
+		);
+
 		req.bookingId = (newBooking._id as string).toString();
 		next();
 	} catch (error) {
@@ -131,12 +136,6 @@ export const handleGetUserBookings = async (req: any, res: Response) => {
 
 		await Promise.all(
 			bookings.map(async (booking) => {
-				// Update booking status if necessary
-				if (booking.status === "pending" && !booking.providerId && new Date(booking.startDate) < new Date()) {
-					booking.status = "cancelled";
-					await booking.save();
-				}
-
 				const payments = await PaymentModel.find({ bookingId: booking._id });
 
 				const bookingDetail = {

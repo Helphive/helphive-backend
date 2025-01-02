@@ -1,13 +1,13 @@
 import * as React from "react";
 import { Body, Container, Head, Heading, Html, Img, Link, Preview, Text } from "@react-email/components";
+import { CLIENT_BASE_URL, PUBLIC_BUCKET } from "../config/config";
 
 interface NotionMagicLinkEmailProps {
-	baseUrl: string;
 	loginCode?: string;
 	verificationLink?: string;
 }
 
-export const NotionMagicLinkEmail = ({ baseUrl, loginCode, verificationLink }: NotionMagicLinkEmailProps) => {
+export const NotionMagicLinkEmail = ({ loginCode, verificationLink }: NotionMagicLinkEmailProps) => {
 	const magicLink = verificationLink || "";
 	return (
 		<Html>
@@ -89,9 +89,14 @@ export const NotionMagicLinkEmail = ({ baseUrl, loginCode, verificationLink }: N
 					>
 						Note: This is a one-time link and will expire in 1 day.
 					</Text>
-					<Img src={`${baseUrl}/favicon.png`} width="32" height="32" alt="HelpHive's Logo" />
+					<Img
+						src={`https://storage.googleapis.com/${PUBLIC_BUCKET}/logo-light.png`}
+						width="32"
+						height="32"
+						alt="HelpHive's Logo"
+					/>
 					<Text style={footer}>
-						<Link href="https://helphivenow.com" target="_blank" style={{ ...link, color: "#898989" }}>
+						<Link href={`${CLIENT_BASE_URL}`} target="_blank" style={{ ...link, color: "#898989" }}>
 							Helphive
 						</Link>
 						, the all-in-one-marketplace
@@ -105,7 +110,6 @@ export const NotionMagicLinkEmail = ({ baseUrl, loginCode, verificationLink }: N
 };
 
 NotionMagicLinkEmail.PreviewProps = {
-	baseUrl: "https://api.helphivenow.com",
 	loginCode: "sparo-ndigo-amurt-secan",
 	verificationLink: "https://api.helphivenow.com/auth/verify-email?token=random",
 } as NotionMagicLinkEmailProps;

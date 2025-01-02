@@ -5,7 +5,6 @@ export interface Admin extends Document {
 	lastName: string;
 	email: string;
 	password: string;
-	refreshToken: string[];
 	roles: {
 		admin: boolean;
 		superAdmin: boolean;
@@ -15,15 +14,14 @@ export interface Admin extends Document {
 }
 
 const adminSchema: Schema = new Schema({
-	firstName: { type: String, required: true, unique: true },
-	lastName: { type: String, required: true, unique: true },
+	firstName: { type: String, required: true },
+	lastName: { type: String, required: true },
 	email: { type: String, required: true, unique: true },
 	password: { type: String, required: true },
 	roles: {
 		admin: { type: Boolean, default: false },
 		superAdmin: { type: Boolean, default: false },
 	},
-	refreshToken: { type: [String] },
 	createdAt: { type: Date, default: Date.now },
 	updatedAt: { type: Date, default: Date.now },
 });

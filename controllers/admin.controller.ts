@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
-import jwt, { VerifyErrors } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import { GetSignedUrlConfig } from "@google-cloud/storage";
 import { googleCloudStorage, providerAccountBucket, userProfilesBucket } from "./service-accounts/cloud-storage";
@@ -11,7 +11,6 @@ import UserModel from "../dal/models/user.model";
 import path from "path";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
-const refreshTokenKey = process.env.REFRESH_TOKEN_SECRET || "";
 
 export const handleSignup = async (req: Request, res: Response) => {
 	try {
@@ -23,7 +22,7 @@ export const handleSignup = async (req: Request, res: Response) => {
 			});
 		}
 
-		const { email, password } = req.body;
+		const { firstName, lastName, email, password } = req.body;
 
 		const existingAdmin = await Admin.findOne({ email });
 		if (existingAdmin) {
@@ -33,10 +32,13 @@ export const handleSignup = async (req: Request, res: Response) => {
 		const hashedPassword = await bcrypt.hash(password, 10);
 
 		const newAdmin = new Admin({
+			firstName,
+			lastName,
 			email,
 			password: hashedPassword,
 			roles: {
 				admin: true,
+				superAdmin: false,
 			},
 		});
 		await newAdmin.save();
@@ -53,12 +55,11 @@ export const handleLogin = async (req: Request, res: Response) => {
 		const errors = validationResult(req);
 		if (!errors.isEmpty()) {
 			return res.status(400).json({
-				message: "Username and password are required.",
+				message: "Email and password are required.",
 				errors: errors.array(),
 			});
 		}
 		const { email, password } = req.body;
-		const cookies = req.cookies;
 
 		const admin = await Admin.findOne({ email });
 		if (!admin) return res.status(401).json({ message: "Invalid credentials" });
@@ -73,35 +74,10 @@ export const handleLogin = async (req: Request, res: Response) => {
 					},
 				},
 				accessTokenKey,
-				{ expiresIn: "600s" },
+				{ expiresIn: "30d" },
 			);
-			const newRefreshToken = jwt.sign({ username: admin.email }, refreshTokenKey, { expiresIn: "1d" });
 
-			let newRefreshTokenArray = admin.refreshToken.filter((rt) => rt !== cookies.jwt);
-
-			if (cookies.jwt) {
-				const refreshToken = cookies.jwt;
-				const foundToken = await Admin.findOne({ refreshToken });
-				if (!foundToken || jwt.verify(refreshToken, refreshTokenKey)) {
-					newRefreshTokenArray = [];
-					res.clearCookie("jwt", {
-						httpOnly: true,
-						sameSite: "none",
-						secure: true,
-					});
-				}
-			}
-
-			admin.refreshToken = [...newRefreshTokenArray, newRefreshToken];
-			await admin.save();
-
-			res.cookie("jwt", newRefreshToken, {
-				httpOnly: true,
-				secure: true,
-				sameSite: "none",
-				maxAge: 24 * 60 * 60 * 1000,
-			});
-			res.json({ user: admin, secretToken: accessToken });
+			res.json({ admin, accessToken });
 		} else {
 			res.sendStatus(401);
 		}
@@ -111,97 +87,23 @@ export const handleLogin = async (req: Request, res: Response) => {
 	}
 };
 
-export const handleLogout = async (req: Request, res: Response) => {
-	// On client, also delete the accessToken
-	const cookies = req.cookies;
-	if (!cookies?.jwt) return res.sendStatus(204);
-	const refreshToken = cookies.jwt;
-
-	const foundAdmin = await Admin.findOne({ refreshToken }).exec();
-	if (!foundAdmin) {
-		res.clearCookie("jwt", {
-			httpOnly: true,
-			sameSite: "none",
-			secure: true,
-		});
-		return res.sendStatus(204);
+export const handleGetAccount = async (req: Request, res: Response) => {
+	try {
+		const { user } = req.body;
+		const foundAdmin = await Admin.findOne({ email: user.email });
+		res.json({ user: foundAdmin });
+	} catch (error) {
+		console.error("Error getting account:", error);
+		res.status(500).json({ message: "Internal server error" });
 	}
-
-	foundAdmin.refreshToken = foundAdmin.refreshToken.filter((rt) => rt !== refreshToken);
-	const result = await foundAdmin.save();
-	console.log(result);
-
-	res.clearCookie("jwt", { httpOnly: true, sameSite: "none", secure: true });
-	res.sendStatus(204);
-};
-
-export const handleRefreshToken = async (req: Request, res: Response) => {
-	const cookies = req.cookies;
-	if (!cookies?.jwt) return res.send(401).json({ message: "Unauthorized access!" });
-	const refreshToken = cookies.jwt;
-	res.clearCookie("jwt", { httpOnly: true, sameSite: "none", secure: true });
-
-	const foundAdmin = await Admin.findOne({ refreshToken });
-
-	if (!foundAdmin) {
-		jwt.verify(refreshToken, refreshTokenKey, async (error: VerifyErrors | null, decoded: any) => {
-			if (error) return res.send(403).json({ message: "Access forbidden!" });
-			const hackedUser = await Admin.findOne({
-				email: decoded?.email,
-			});
-			if (hackedUser) {
-				hackedUser.refreshToken = [];
-				await hackedUser.save();
-			}
-		});
-		return res.send(403).json({ message: "Access forbidden!" });
-	}
-
-	const newRefreshTokenArray = foundAdmin.refreshToken.filter((rt) => rt !== refreshToken);
-
-	jwt.verify(refreshToken, refreshTokenKey, async (error: VerifyErrors | null, decoded: any) => {
-		if (error) {
-			foundAdmin.refreshToken = [...newRefreshTokenArray];
-			await foundAdmin.save();
-		}
-		if (error || foundAdmin.email !== decoded.email) return res.send(403).json({ message: "Access forbidden!" });
-
-		const roles = Object.values(foundAdmin.roles);
-		const accessToken = jwt.sign(
-			{
-				UserInfo: {
-					emmail: decoded.email,
-					roles: roles,
-				},
-			},
-			accessTokenKey,
-			{ expiresIn: "600s" },
-		);
-
-		const newRefreshToken = jwt.sign({ email: foundAdmin.email }, refreshTokenKey, { expiresIn: "1d" });
-
-		foundAdmin.refreshToken = [...newRefreshTokenArray, newRefreshToken];
-		await foundAdmin.save();
-
-		res.cookie("jwt", newRefreshToken, {
-			httpOnly: true,
-			secure: true,
-			sameSite: "none",
-			maxAge: 24 * 60 * 60 * 1000,
-		});
-
-		res.json({ admin: foundAdmin, accessToken });
-	});
 };
 
 export const handleGetProviderAccountRequests = async (req: Request, res: Response) => {
 	try {
-		// Fetch pending provider account requests
 		const providerAccountRequests = await ProviderApplicationModel.find({
 			status: "pending",
 		}).exec();
 
-		// Generate signed URLs for each file
 		const modifiedRequests = await Promise.all(
 			providerAccountRequests.map(async (request) => {
 				const signedUrls = await Promise.all([
@@ -256,7 +158,6 @@ export const handleGetProviderAccountRequestsComplete = async (req: Request, res
 			}),
 		);
 
-		// Send modified requests with signed URLs
 		res.status(200).json(modifiedRequests);
 	} catch (error) {
 		console.error("Error getting provider account requests:", error);

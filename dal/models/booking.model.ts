@@ -13,6 +13,9 @@ export interface Booking extends Document {
 	startDate: Date;
 	startedAt: Date;
 	completedAt: Date;
+	completedBy: mongoose.Types.ObjectId;
+	cancelledAt: Date;
+	cancelledBy: mongoose.Types.ObjectId;
 	userApprovalRequested: boolean;
 	address: string;
 	latitude: number;
@@ -66,6 +69,20 @@ const bookingSchema: Schema = new Schema(
 		},
 		completedAt: {
 			type: Date,
+			default: null,
+		},
+		completedBy: {
+			type: mongoose.Types.ObjectId,
+			ref: "User",
+			default: null,
+		},
+		cancelledAt: {
+			type: Date,
+			default: null,
+		},
+		cancelledBy: {
+			type: mongoose.Types.ObjectId,
+			ref: "User",
 			default: null,
 		},
 		userApprovalRequested: {

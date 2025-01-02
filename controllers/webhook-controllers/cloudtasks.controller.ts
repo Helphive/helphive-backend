@@ -118,6 +118,8 @@ export const handleGoogleCloudTasksBookingExpired = async (req: Request, res: Re
 		}
 
 		booking.status = "cancelled";
+		booking.cancelledAt = new Date();
+		booking.cancelledBy = booking.userId;
 		await booking.save();
 
 		await sendBookingExpiredNotification(booking.userId.toString(), bookingId);

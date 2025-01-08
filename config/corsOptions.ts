@@ -3,7 +3,10 @@ import { CorsOptions } from "cors";
 
 const corsOptions: CorsOptions = {
 	origin: (origin: string | undefined, callback: any) => {
-		if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+		if (
+			!origin ||
+			allowedOrigins.some((pattern) => (typeof pattern === "string" ? pattern === origin : pattern.test(origin)))
+		) {
 			callback(null, true);
 		} else {
 			console.log(origin);

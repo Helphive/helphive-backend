@@ -475,6 +475,7 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 
 		booking.status = "completed";
 		booking.completedAt = new Date();
+		booking.completedBy = user._id;
 		await booking.save();
 
 		await sendBookingCompletedNotification(
@@ -525,6 +526,8 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 		}
 
 		booking.status = "cancelled";
+		booking.cancelledAt = new Date();
+		booking.cancelledBy = user._id as mongoose.Types.ObjectId;
 		await booking.save();
 
 		await sendBookingCancelledNotification(

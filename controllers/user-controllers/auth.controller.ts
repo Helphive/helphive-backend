@@ -486,7 +486,7 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 
 		await EarningModel.create({
 			bookingId: booking._id,
-			amount: payment.amount * 0.8,
+			amount: payment.amount * 0.95,
 			date: new Date(),
 		});
 

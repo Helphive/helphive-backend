@@ -9,6 +9,7 @@ import mongoose from "mongoose";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
 import EarningModel from "../../dal/models/earning.model";
+import NotificationModel from "../../dal/models/notification.model";
 import { googleCloudStorage, userProfilesBucket } from "../service-accounts/cloud-storage";
 import {
 	createGoogleCloudTaskPaymentTrigger,
@@ -635,6 +636,35 @@ export const handleGeminiChat = async (req: Request, res: Response) => {
 	} catch (error) {
 		console.error("Error generating chat:", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
+	}
+};
+
+export const handleGetNotifications = async (req: Request, res: Response) => {
+	try {
+		const userEmail = req.user;
+		const user = await UserModel.findOne({
+			email: userEmail,
+		});
+		if (!user) {
+			return res.status(404).json({
+				message: "User not found.",
+			});
+		}
+		const notifications = await NotificationModel.find({
+			userId: user._id,
+		})
+			.sort({
+				createdAt: -1,
+			})
+			.exec();
+		res.status(200).json({
+			notifications,
+		});
+	} catch (error) {
+		console.error("Error fetching notifications:", error);
+		res.status(500).json({
+			message: "An error occurred while processing request.",
+		});
 	}
 };
 

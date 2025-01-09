@@ -4,7 +4,7 @@ import EarningModel from "../../dal/models/earning.model";
 import UserModel from "../../dal/models/user.model";
 import stripe from "../service-accounts/stripe";
 
-import { sendNotification } from "../service-accounts/onesignal";
+import { sendNotification, storeNotification } from "../service-accounts/onesignal";
 import PaymentModel from "../../dal/models/payment.model";
 
 export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: Response) => {
@@ -95,6 +95,7 @@ const sendPaymentNotification = async (providerId: string, amount: number) => {
 			},
 		};
 		sendNotification(notificationMessage);
+		storeNotification("Payment Received", `$${amount} received in your account!`, providerId, "Earnings");
 	} catch (error) {
 		console.error(`Error sending payment notification for earning ID: `, error);
 	}
@@ -165,6 +166,9 @@ const sendBookingExpiredNotification = async (userId: string, bookingId: string)
 			},
 		};
 		sendNotification(notificationMessage);
+		storeNotification("Booking Expired", "Your booking request has expired.", userId, "BookingDetails", {
+			bookingId,
+		});
 	} catch (error) {
 		console.error(`Error sending booking expired notification for booking ID: `, error);
 	}

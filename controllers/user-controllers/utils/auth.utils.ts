@@ -1,4 +1,4 @@
-import { sendNotification } from "../../service-accounts/onesignal";
+import { sendNotification, storeNotification } from "../../service-accounts/onesignal";
 import { googleCloudTasks } from "../../service-accounts/cloud-tasks";
 import { GOOGLE_CLOUD_TASKS_QUEUE_PATH, SERVER_BASE_URL } from "../../../config/config";
 
@@ -27,6 +27,12 @@ export const sendBookingCompletedNotification = async (userId: string, providerI
 
 		await sendNotification(notificationMessage1);
 		await sendNotification(notificationMessage2);
+		await storeNotification("Booking Complete", "You got the requested service.", userId, "BookingDetails", {
+			bookingId,
+		});
+		await storeNotification("Booking Complete", "You job is now complete.", providerId, "MyOrderDetails", {
+			bookingId,
+		});
 		console.log("Notification sent to ids: ", userId);
 	} catch (error: any) {
 		console.error(
@@ -48,6 +54,9 @@ export const sendBookingCancelledNotification = async (userId: string, providerI
 			},
 		};
 		await sendNotification(notificationMessage1);
+		await storeNotification("Booking Cancelled", "Your booking has been cancelled.", userId, "BookingDetails", {
+			bookingId,
+		});
 		if (providerId) {
 			const notificationMessage2 = {
 				include_aliases: { external_id: [providerId] },
@@ -59,6 +68,15 @@ export const sendBookingCancelledNotification = async (userId: string, providerI
 				},
 			};
 			await sendNotification(notificationMessage2);
+			await storeNotification(
+				"Booking Cancelled",
+				"A booking has been cancelled.",
+				providerId,
+				"MyOrderDetails",
+				{
+					bookingId,
+				},
+			);
 		}
 
 		console.log("Notification sent to ids: ", userId);

@@ -34,7 +34,8 @@ if (
 	!process.env.STRIPE_SECRET_KEY ||
 	!process.env.STRIPE_WEBHOOK_SECRET ||
 	!process.env.ONE_SIGNAL_APP_ID ||
-	!process.env.ONE_SIGNAL_REST_API_KEY
+	!process.env.ONE_SIGNAL_REST_API_KEY ||
+	!process.env.GEMINI_API_KEY
 ) {
 	throw `Abort: You need to define variables in the .env file.`;
 }

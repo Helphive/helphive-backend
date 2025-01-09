@@ -17,14 +17,27 @@ import {
 } from "./utils/auth.utils";
 import stripe from "../service-accounts/stripe";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { AzureOpenAI } from "openai";
+import { AZURE_OPENAI_API_VERSION, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT } from "../../config/config";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
 const refreshTokenKey = process.env.REFRESH_TOKEN_SECRET || "";
 const emailVerificationSecret = process.env.EMAIL_VERIFICATION_SECRET || "";
 const ONE_SIGNAL_APP_ID = process.env.ONE_SIGNAL_APP_ID || "";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const googleGenerativeAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const googleGenerativeAIModel = googleGenerativeAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+const azureOpenAIEndpoint = AZURE_OPENAI_BASE_URL;
+const azureOpenAIApiKey = process.env.AZURE_OPENAI_API_KEY || "";
+const azureOpenAIApiVersion = AZURE_OPENAI_API_VERSION;
+const azureOpenAIDeployment = AZURE_OPENAI_DEPLOYMENT;
+const azureOpenAIClient = new AzureOpenAI({
+	endpoint: azureOpenAIEndpoint,
+	apiKey: azureOpenAIApiKey,
+	apiVersion: azureOpenAIApiVersion,
+	deployment: azureOpenAIDeployment,
+});
 
 export const handleSignup = async (req: Request, res: Response, next: NextFunction) => {
 	try {
@@ -614,11 +627,31 @@ export const handleUpdateProfile = async (req: Request, res: Response) => {
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
-export const handleGenerativeChat = async (req: Request, res: Response) => {
+export const handleGeminiChat = async (req: Request, res: Response) => {
 	try {
 		const { message } = req.body;
-		const result = await model.generateContent(message);
+		const result = await googleGenerativeAIModel.generateContent(message);
 		res.status(200).json({ message: result.response.text() });
+	} catch (error) {
+		console.error("Error generating chat:", error);
+		res.status(500).json({ message: "An error occurred while processing request." });
+	}
+};
+
+export const handleAzureOpenAIChat = async (req: Request, res: Response) => {
+	try {
+		const { messages } = req.body;
+
+		if (!Array.isArray(messages) || messages.some((msg) => !msg.role || !msg.content)) {
+			return res.status(400).json({ message: "Invalid messages format." });
+		}
+
+		const result = await azureOpenAIClient.chat.completions.create({
+			model: "gpt-4o",
+			messages: messages,
+		});
+
+		res.status(200).json({ message: result.choices[0].message.content });
 	} catch (error) {
 		console.error("Error generating chat:", error);
 		res.status(500).json({ message: "An error occurred while processing request." });

@@ -668,6 +668,45 @@ export const handleGetNotifications = async (req: Request, res: Response) => {
 	}
 };
 
+export const handleMarkNotificationAsRead = async (req: Request, res: Response) => {
+	try {
+		const { notificationId } = req.body;
+		if (!notificationId) {
+			return res.status(400).json({
+				message: "Notification ID is required.",
+			});
+		}
+		const notification = await NotificationModel.findById(notificationId);
+		if (!notification) {
+			return res.status(404).json({
+				message: "Notification not found.",
+			});
+		}
+		const userEmail = req.user;
+		const user = await UserModel.findOne({ email: userEmail });
+		if (!user) {
+			return res.status(404).json({
+				message: "User not found.",
+			});
+		}
+		if (notification.userId.toString() !== (user._id as string).toString()) {
+			return res.status(403).json({
+				message: "User not authorized to mark this notification as read.",
+			});
+		}
+		notification.read = true;
+		await notification.save();
+		res.status(200).json({
+			message: "Notification marked as read.",
+		});
+	} catch (error) {
+		console.error("Error marking notification as read:", error);
+		res.status(500).json({
+			message: "An error occurred while processing request.",
+		});
+	}
+};
+
 export const handleAzureOpenAIChat = async (req: Request, res: Response) => {
 	try {
 		const { messages } = req.body;

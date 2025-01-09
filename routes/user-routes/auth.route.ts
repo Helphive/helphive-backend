@@ -14,7 +14,8 @@ import {
 	handleCompleteBooking,
 	handleCancelBooking,
 	handleUpdateProfile,
-	handleGenerativeChat,
+	handleGeminiChat,
+	handleAzureOpenAIChat,
 } from "../../controllers/user-controllers/auth.controller";
 
 import { createContact, sendMagicLinkEmail } from "../../controllers/email.controller";
@@ -56,6 +57,7 @@ authRoute.post(
 	validateUpdateProfileFields,
 	handleUpdateProfile,
 );
-authRoute.post("/generative-chat", verifyJWT, verifyRoles("User", "Provider"), handleGenerativeChat);
+authRoute.post("/gemini-chat", verifyJWT, verifyRoles("User", "Provider"), handleGeminiChat);
+authRoute.post("/azure-openai-chat", verifyJWT, verifyRoles("User", "Provider"), handleAzureOpenAIChat);
 
 export default authRoute;

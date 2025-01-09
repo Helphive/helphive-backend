@@ -16,11 +16,15 @@ import {
 	sendBookingCompletedNotification,
 } from "./utils/auth.utils";
 import stripe from "../service-accounts/stripe";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
 const refreshTokenKey = process.env.REFRESH_TOKEN_SECRET || "";
 const emailVerificationSecret = process.env.EMAIL_VERIFICATION_SECRET || "";
 const ONE_SIGNAL_APP_ID = process.env.ONE_SIGNAL_APP_ID || "";
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 export const handleSignup = async (req: Request, res: Response, next: NextFunction) => {
 	try {
@@ -607,6 +611,16 @@ export const handleUpdateProfile = async (req: Request, res: Response) => {
 		res.status(200).json({ message: "Profile updated successfully." });
 	} catch (error) {
 		console.error("Error updating profile:", error);
+		res.status(500).json({ message: "An error occurred while processing request." });
+	}
+};
+export const handleGenerativeChat = async (req: Request, res: Response) => {
+	try {
+		const { message } = req.body;
+		const result = await model.generateContent(message);
+		res.status(200).json({ message: result.response.text() });
+	} catch (error) {
+		console.error("Error generating chat:", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };

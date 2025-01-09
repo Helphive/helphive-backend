@@ -14,6 +14,7 @@ import {
 	handleCompleteBooking,
 	handleCancelBooking,
 	handleUpdateProfile,
+	handleGenerativeChat,
 } from "../../controllers/user-controllers/auth.controller";
 
 import { createContact, sendMagicLinkEmail } from "../../controllers/email.controller";
@@ -55,5 +56,6 @@ authRoute.post(
 	validateUpdateProfileFields,
 	handleUpdateProfile,
 );
+authRoute.post("/generative-chat", verifyJWT, verifyRoles("User", "Provider"), handleGenerativeChat);
 
 export default authRoute;

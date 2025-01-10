@@ -16,6 +16,7 @@ import {
 	sendBookingCancelledNotification,
 	sendBookingCompletedNotification,
 } from "./utils/auth.utils";
+import { createCometChatUser } from "./utils/cometchat.util";
 import stripe from "../service-accounts/stripe";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { AzureOpenAI } from "openai";
@@ -75,6 +76,8 @@ export const handleSignup = async (req: Request, res: Response, next: NextFuncti
 		});
 		await newUser.save();
 
+		await createCometChatUser((newUser._id as string).toString(), email, `${firstName} ${lastName}`);
+
 		next();
 	} catch (error) {
 		console.error("Error signing up:", error);
@@ -116,6 +119,8 @@ export const handleSignupProvider = async (req: Request, res: Response, next: Ne
 			},
 		});
 		await newUser.save();
+
+		await createCometChatUser((newUser._id as string).toString(), email, `${firstName} ${lastName}`);
 
 		next();
 	} catch (error) {

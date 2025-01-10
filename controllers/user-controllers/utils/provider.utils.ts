@@ -1,5 +1,5 @@
 import stripe from "../../service-accounts/stripe";
-import { sendNotification } from "../../service-accounts/onesignal";
+import { sendNotification, storeNotification } from "../../service-accounts/onesignal";
 import { CLIENT_BASE_URL } from "../../../config/config";
 
 export const sendBookingStartedNotification = async (userId: string, bookingId: string) => {
@@ -16,6 +16,9 @@ export const sendBookingStartedNotification = async (userId: string, bookingId: 
 		console.log(notificationMessage);
 
 		await sendNotification(notificationMessage);
+		await storeNotification("Booking Started", "Your booking requires attention!", userId, "BookingDetails", {
+			bookingId,
+		});
 		console.log("Notification sent to ids: ", userId);
 	} catch (error: any) {
 		console.error(

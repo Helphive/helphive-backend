@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { Resend } from "resend";
 import stripe from "../service-accounts/stripe";
-import { sendNotification } from "../service-accounts/onesignal";
+import { sendNotification, storeNotification } from "../service-accounts/onesignal";
 import UserModel from "../../dal/models/user.model";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
@@ -96,6 +96,11 @@ const sendBookingNotification = async (bookingId: string) => {
 		};
 
 		await sendNotification(notificationMessage);
+		for (const provider of providerIds) {
+			await storeNotification("New Order Received", "A new job is available near you.", provider, "AcceptOrder", {
+				bookingId,
+			});
+		}
 		console.log("Notification sent to ids: ", providerIds);
 	} catch (error: any) {
 		console.error(
@@ -237,6 +242,15 @@ const sendRefundNotification = async (userId: string, bookingId: string, refundA
 			},
 		};
 		sendNotification(notificationMessage);
+		storeNotification(
+			"Booking Refunded",
+			`We're sorry. A booking was cancelled. $${refundAmount} Refunded!`,
+			userId,
+			"BookingDetails",
+			{
+				bookingId,
+			},
+		);
 	} catch (error) {
 		console.error(`Error sending refund notification for refund ID: `, error);
 	}

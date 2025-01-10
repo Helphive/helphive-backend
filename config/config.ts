@@ -15,6 +15,7 @@ type Config = {
 		AZURE_OPENAI_BASE_URL: string;
 		AZURE_OPENAI_API_VERSION: string;
 		AZURE_OPENAI_DEPLOYMENT: string;
+		COMET_CHAT_BASE_URL: string;
 	};
 };
 
@@ -40,6 +41,7 @@ const config: Config = {
 			"https://maizazureopenai.openai.azure.com/openai/deployments/gpt-4o-helphive/chat/completions?api-version=2024-08-01-preview",
 		AZURE_OPENAI_API_VERSION: "2024-08-01-preview",
 		AZURE_OPENAI_DEPLOYMENT: "gpt-4o-helphive",
+		COMET_CHAT_BASE_URL: "https://26925431c1f0b1aa.api-eu.cometchat.io/v3",
 	},
 };
 
@@ -56,4 +58,5 @@ export const {
 	AZURE_OPENAI_BASE_URL,
 	AZURE_OPENAI_API_VERSION,
 	AZURE_OPENAI_DEPLOYMENT,
+	COMET_CHAT_BASE_URL,
 } = config.common;

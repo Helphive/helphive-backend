@@ -11,6 +11,7 @@ import PaymentModel from "../../dal/models/payment.model";
 import EarningModel from "../../dal/models/earning.model";
 import { generateAccountLink, sendBookingStartedNotification } from "./utils/provider.utils";
 import PayoutModel from "../../dal/models/payout.model";
+import { sendCometChatMessage } from "./utils/cometchat.util";
 
 declare module "express" {
 	interface Request {
@@ -218,6 +219,8 @@ export const handleAcceptBooking = async (req: Request, res: Response) => {
 
 		booking.providerId = user._id as any;
 		await booking.save();
+
+		await sendCometChatMessage(booking.userId.toString(), (user._id as string).toString());
 
 		res.status(200).json({ message: "Booking accepted successfully." });
 	} catch (error) {

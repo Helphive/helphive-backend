@@ -9,12 +9,14 @@ import mongoose from "mongoose";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
 import EarningModel from "../../dal/models/earning.model";
+import NotificationModel from "../../dal/models/notification.model";
 import { googleCloudStorage, userProfilesBucket } from "../service-accounts/cloud-storage";
 import {
 	createGoogleCloudTaskPaymentTrigger,
 	sendBookingCancelledNotification,
 	sendBookingCompletedNotification,
 } from "./utils/auth.utils";
+import { createCometChatUser, updateCometChatUser } from "./utils/cometchat.util";
 import stripe from "../service-accounts/stripe";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { AzureOpenAI } from "openai";
@@ -74,6 +76,8 @@ export const handleSignup = async (req: Request, res: Response, next: NextFuncti
 		});
 		await newUser.save();
 
+		await createCometChatUser((newUser._id as string).toString(), email, `${firstName} ${lastName}`);
+
 		next();
 	} catch (error) {
 		console.error("Error signing up:", error);
@@ -115,6 +119,8 @@ export const handleSignupProvider = async (req: Request, res: Response, next: Ne
 			},
 		});
 		await newUser.save();
+
+		await createCometChatUser((newUser._id as string).toString(), email, `${firstName} ${lastName}`);
 
 		next();
 	} catch (error) {
@@ -613,6 +619,7 @@ export const handleUpdateProfile = async (req: Request, res: Response) => {
 
 				await googleCloudStorage.bucket(userProfilesBucket).file(destinationPath).save(profileFile.buffer);
 				user.profile = destinationPath;
+				await updateCometChatUser(userId, destinationPath);
 			} catch (error) {
 				console.error(`Error uploading profile image to ${destinationPath}:`, error);
 				throw error;
@@ -635,6 +642,74 @@ export const handleGeminiChat = async (req: Request, res: Response) => {
 	} catch (error) {
 		console.error("Error generating chat:", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
+	}
+};
+
+export const handleGetNotifications = async (req: Request, res: Response) => {
+	try {
+		const userEmail = req.user;
+		const user = await UserModel.findOne({
+			email: userEmail,
+		});
+		if (!user) {
+			return res.status(404).json({
+				message: "User not found.",
+			});
+		}
+		const notifications = await NotificationModel.find({
+			userId: user._id,
+		})
+			.sort({
+				createdAt: -1,
+			})
+			.exec();
+		res.status(200).json({
+			notifications,
+		});
+	} catch (error) {
+		console.error("Error fetching notifications:", error);
+		res.status(500).json({
+			message: "An error occurred while processing request.",
+		});
+	}
+};
+
+export const handleMarkNotificationAsRead = async (req: Request, res: Response) => {
+	try {
+		const { notificationId } = req.body;
+		if (!notificationId) {
+			return res.status(400).json({
+				message: "Notification ID is required.",
+			});
+		}
+		const notification = await NotificationModel.findById(notificationId);
+		if (!notification) {
+			return res.status(404).json({
+				message: "Notification not found.",
+			});
+		}
+		const userEmail = req.user;
+		const user = await UserModel.findOne({ email: userEmail });
+		if (!user) {
+			return res.status(404).json({
+				message: "User not found.",
+			});
+		}
+		if (notification.userId.toString() !== (user._id as string).toString()) {
+			return res.status(403).json({
+				message: "User not authorized to mark this notification as read.",
+			});
+		}
+		notification.read = true;
+		await notification.save();
+		res.status(200).json({
+			message: "Notification marked as read.",
+		});
+	} catch (error) {
+		console.error("Error marking notification as read:", error);
+		res.status(500).json({
+			message: "An error occurred while processing request.",
+		});
 	}
 };
 

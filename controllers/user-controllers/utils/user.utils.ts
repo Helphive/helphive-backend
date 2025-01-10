@@ -1,6 +1,6 @@
 import { GOOGLE_CLOUD_TASKS_QUEUE_PATH, SERVER_BASE_URL } from "../../../config/config";
 import { googleCloudTasks } from "../../service-accounts/cloud-tasks";
-import { sendNotification } from "../../service-accounts/onesignal";
+import { sendNotification, storeNotification } from "../../service-accounts/onesignal";
 
 export const sendBookingStartApprovedNotification = async (userId: string, bookingId: string) => {
 	try {
@@ -16,6 +16,15 @@ export const sendBookingStartApprovedNotification = async (userId: string, booki
 		console.log(notificationMessage);
 
 		await sendNotification(notificationMessage);
+		await storeNotification(
+			"Booking Start Approved",
+			"Your start request was approved!",
+			userId,
+			"MyOrderDetails",
+			{
+				bookingId,
+			},
+		);
 		console.log("Notification sent to ids: ", userId);
 	} catch (error: any) {
 		console.error(

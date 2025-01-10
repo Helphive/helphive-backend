@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import { GetSignedUrlConfig } from "@google-cloud/storage";
 import { googleCloudStorage, providerAccountBucket, userProfilesBucket } from "./service-accounts/cloud-storage";
+import { updateCometChatUser } from "./user-controllers/utils/cometchat.util";
 
 import Admin from "../dal/models/admin.model";
 import ProviderApplicationModel from "../dal/models/providerapplication.model";
@@ -218,6 +219,7 @@ export const handleUpdateProviderAccountRequestStatus = async (req: Request, res
 			user.city = providerAccountRequest.city.toLowerCase();
 			user.street = providerAccountRequest.street.toLowerCase();
 			await user.save();
+			await updateCometChatUser(userId, destinationPath);
 		}
 
 		res.status(200).json("Provider account request and user status updated successfully");

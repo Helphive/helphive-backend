@@ -16,7 +16,7 @@ import {
 	sendBookingCancelledNotification,
 	sendBookingCompletedNotification,
 } from "./utils/auth.utils";
-import { createCometChatUser } from "./utils/cometchat.util";
+import { createCometChatUser, updateCometChatUser } from "./utils/cometchat.util";
 import stripe from "../service-accounts/stripe";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { AzureOpenAI } from "openai";
@@ -619,6 +619,7 @@ export const handleUpdateProfile = async (req: Request, res: Response) => {
 
 				await googleCloudStorage.bucket(userProfilesBucket).file(destinationPath).save(profileFile.buffer);
 				user.profile = destinationPath;
+				await updateCometChatUser(userId, destinationPath);
 			} catch (error) {
 				console.error(`Error uploading profile image to ${destinationPath}:`, error);
 				throw error;

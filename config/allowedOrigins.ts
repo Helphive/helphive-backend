@@ -7,6 +7,8 @@ const allowedOrigins = [
 	"https://helphive.firebaseapp.com",
 	"https://helphivenow.com",
 	"https://www.helphivenow.com",
+	"https://admin.helphivenow.com",
+	"https://api.helphivenow.com",
 ];
 
 export default allowedOrigins;

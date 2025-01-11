@@ -217,6 +217,10 @@ export const handleAcceptBooking = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "Booking start time has already passed." });
 		}
 
+		if (user.stripeConnectedAccountId === null) {
+			return res.status(400).json({ message: "Please connect your stripe account first." });
+		}
+
 		booking.providerId = user._id as any;
 		await booking.save();
 

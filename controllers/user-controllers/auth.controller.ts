@@ -487,7 +487,7 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 		// const fiveDaysFromNow = new Date();
 		// fiveDaysFromNow.setDate(fiveDaysFromNow.getDate() + 5);
 		const fiveMinutesFromNow = new Date();
-		fiveMinutesFromNow.setMinutes(fiveMinutesFromNow.getSeconds() + 30);
+		fiveMinutesFromNow.setSeconds(fiveMinutesFromNow.getSeconds() + 30);
 		await createGoogleCloudTaskPaymentTrigger(bookingId, fiveMinutesFromNow);
 
 		await EarningModel.create({

@@ -46,7 +46,7 @@ authRoute.post("/refresh", handleRefreshToken);
 authRoute.get("/user-info", verifyJWT, verifyRoles("User", "Provider"), handleGetUserInfo);
 authRoute.get("/verify-email", handleVerifyEmail);
 authRoute.post("/reset-password", validateResetPasswordFields, handleResetPassword);
-authRoute.use("/reset-password", express.static(path.join(__dirname, "..", "views", "Reset Password")));
+authRoute.use("/reset-password", express.static(path.join(__dirname, "..", "..", "views", "Reset Password")));
 authRoute.use("/user", verifyJWT, verifyRoles("User"), userRoute);
 authRoute.use("/provider", verifyJWT, verifyRoles("Provider"), providerRoute);
 authRoute.post("/complete-booking", verifyJWT, verifyRoles("User", "Provider"), handleCompleteBooking);

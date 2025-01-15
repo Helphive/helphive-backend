@@ -19,7 +19,7 @@ import {
 import { createCometChatUser, updateCometChatUser } from "./utils/cometchat.util";
 import stripe from "../service-accounts/stripe";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { AzureOpenAI } from "openai";
+import OpenAI, { AzureOpenAI } from "openai";
 import { AZURE_OPENAI_API_VERSION, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT } from "../../config/config";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
@@ -40,6 +40,8 @@ const azureOpenAIClient = new AzureOpenAI({
 	apiVersion: azureOpenAIApiVersion,
 	deployment: azureOpenAIDeployment,
 });
+
+const openaiModel = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "" });
 
 export const handleSignup = async (req: Request, res: Response, next: NextFunction) => {
 	try {
@@ -722,6 +724,26 @@ export const handleAzureOpenAIChat = async (req: Request, res: Response) => {
 		}
 
 		const result = await azureOpenAIClient.chat.completions.create({
+			model: "gpt-4o",
+			messages: messages,
+		});
+
+		res.status(200).json({ message: result.choices[0].message.content });
+	} catch (error) {
+		console.error("Error generating chat:", error);
+		res.status(500).json({ message: "An error occurred while processing request." });
+	}
+};
+
+export const handleOpenAIChat = async (req: Request, res: Response) => {
+	try {
+		const { messages } = req.body;
+
+		if (!Array.isArray(messages) || messages.some((msg) => !msg.role || !msg.content)) {
+			return res.status(400).json({ message: "Invalid messages format." });
+		}
+
+		const result = await openaiModel.chat.completions.create({
 			model: "gpt-4o",
 			messages: messages,
 		});

@@ -744,7 +744,7 @@ export const handleOpenAIChat = async (req: Request, res: Response) => {
 		}
 
 		const result = await openaiModel.chat.completions.create({
-			model: "gpt-4o",
+			model: "gpt-4o-mini",
 			messages: messages,
 		});
 

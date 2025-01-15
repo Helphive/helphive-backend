@@ -71,19 +71,32 @@ const updatePaymentStatus = async (paymentIntentId: string, status: "pending" | 
 			console.error(`Booking with ID ${payment.bookingId} not found.`);
 			return;
 		}
-		await sendBookingNotification(payment.bookingId);
+		await sendBookingNotification(payment.bookingId, booking);
 		console.log(`Payment status updated to ${status} for intent ID ${paymentIntentId}.`);
 	} catch (error) {
 		console.error(`Error updating payment status for intent ID ${paymentIntentId}:`, error);
 	}
 };
 
-const sendBookingNotification = async (bookingId: string) => {
+const sendBookingNotification = async (bookingId: string, booking: InstanceType<typeof BookingModel>) => {
 	try {
 		const availableProviders = await UserModel.find({ isProviderAvailable: true });
-		const providerIds = availableProviders.map((provider) => (provider._id as any).toString());
+		const providersInRadius = availableProviders.filter((provider) => {
+			const distance = getDistanceFromLatLonInKm(
+				booking.latitude,
+				booking.longitude,
+				provider.currentLocation?.latitude ?? 0,
+				provider.currentLocation?.longitude ?? 0,
+			);
+			return distance <= 25;
+		});
 
-		console.log(providerIds);
+		if (providersInRadius.length === 0) {
+			console.log(`No providers available within 25km radius for booking ID ${bookingId}.`);
+			return;
+		}
+
+		const providerIds = providersInRadius.map((provider) => (provider._id as any).toString());
 
 		const notificationMessage = {
 			include_aliases: { external_id: providerIds },
@@ -109,6 +122,22 @@ const sendBookingNotification = async (bookingId: string) => {
 		);
 	}
 };
+
+function getDistanceFromLatLonInKm(latitude: number, longitude: number, latitude1: number, longitude1: number) {
+	const R = 6371;
+	const dLat = deg2rad(latitude1 - latitude);
+	const dLon = deg2rad(longitude1 - longitude);
+	const a =
+		Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+		Math.cos(deg2rad(latitude)) * Math.cos(deg2rad(latitude1)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+	const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+	const distance = R * c;
+	return distance;
+}
+
+function deg2rad(deg: number) {
+	return deg * (Math.PI / 180);
+}
 
 export const handleStripeConnectedPayoutsWebhook = async (req: Request, res: Response) => {
 	const sig = req.headers["stripe-signature"] || "";

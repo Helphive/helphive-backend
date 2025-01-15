@@ -18,6 +18,7 @@ import {
 	handleAzureOpenAIChat,
 	handleGetNotifications,
 	handleMarkNotificationAsRead,
+	handleOpenAIChat,
 } from "../../controllers/user-controllers/auth.controller";
 
 import { createContact, sendMagicLinkEmail } from "../../controllers/email.controller";
@@ -63,5 +64,6 @@ authRoute.get("/notifications", verifyJWT, verifyRoles("User", "Provider"), hand
 authRoute.post("/mark-notification-read", verifyJWT, verifyRoles("User", "Provider"), handleMarkNotificationAsRead);
 authRoute.post("/gemini-chat", verifyJWT, verifyRoles("User", "Provider"), handleGeminiChat);
 authRoute.post("/azure-openai-chat", verifyJWT, verifyRoles("User", "Provider"), handleAzureOpenAIChat);
+authRoute.post("/openai-chat", verifyJWT, verifyRoles("User", "Provider"), handleOpenAIChat);
 
 export default authRoute;

@@ -1,11 +1,12 @@
 [
 	{
-		"relation": ["delegate_permission/common.handle_all_urls"],
+		"relation": ["delegate_permission/common.handle_all_urls", "delegate_permission/common.get_login_creds"],
 		"target": {
 			"namespace": "android_app",
 			"package_name": "com.helphivenow.app",
 			"sha256_cert_fingerprints": [
-				"D4:9A:E6:C7:71:64:FB:1A:E9:3C:C4:AE:C4:7D:AA:F7:89:5D:78:91:E2:4A:D5:B3:F4:98:5F:9D:D0:B4:7C:E5"
+				"D4:9A:E6:C7:71:64:FB:1A:E9:3C:C4:AE:C4:7D:AA:F7:89:5D:78:91:E2:4A:D5:B3:F4:98:5F:9D:D0:B4:7C:E5",
+				"4C:E9:24:F9:5D:99:74:F5:4F:80:8F:0E:23:69:95:0B:0C:73:9F:A3:2D:82:F3:3D:07:C1:BE:F5:DD:54:44:99"
 			]
 		}
 	}

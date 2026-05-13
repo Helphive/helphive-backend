@@ -1,19 +1,19 @@
-import allowedOrigins from "./allowedOrigins";
+import { isAllowedOrigin } from "./allowedOrigins";
 import { CorsOptions } from "cors";
 
 const corsOptions: CorsOptions = {
 	origin: (origin: string | undefined, callback: any) => {
-		if (
-			!origin ||
-			allowedOrigins.some((pattern) => (typeof pattern === "string" ? pattern === origin : pattern.test(origin)))
-		) {
+		if (isAllowedOrigin(origin)) {
 			callback(null, true);
 		} else {
-			console.log(origin);
+			console.warn(`Blocked by CORS: ${origin}`);
 			callback(new Error("Not allowed by CORS"));
 		}
 	},
-	optionsSuccessStatus: 200,
+	credentials: true,
+	methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+	allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+	optionsSuccessStatus: 204,
 };
 
 export default corsOptions;

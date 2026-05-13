@@ -111,7 +111,7 @@ export const NotionMagicLinkEmail = ({ loginCode, verificationLink }: NotionMagi
 
 NotionMagicLinkEmail.PreviewProps = {
 	loginCode: "sparo-ndigo-amurt-secan",
-	verificationLink: "https://api.helphivenow.com/auth/verify-email?token=random",
+	verificationLink: "https://api.helphive.projects.himaiz.com/auth/verify-email?token=random",
 } as NotionMagicLinkEmailProps;
 
 export default NotionMagicLinkEmail;

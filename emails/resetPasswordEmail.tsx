@@ -109,7 +109,7 @@ export const NotionResetPasswordEmail = ({ loginCode, verificationLink }: ResetP
 
 NotionResetPasswordEmail.PreviewProps = {
 	loginCode: "sparo-ndigo-amurt-secan",
-	verificationLink: "https://api.helphivenow.com/auth/verify-email?token=random",
+	verificationLink: "https://api.helphive.projects.himaiz.com/auth/verify-email?token=random",
 } as ResetPasswordEmailProps;
 
 export default NotionResetPasswordEmail;

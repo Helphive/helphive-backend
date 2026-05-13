@@ -12,6 +12,9 @@ const allowedOrigins = [
 	"https://www.helphivenow.com",
 	"https://admin.helphivenow.com",
 	"https://api.helphivenow.com",
+	"https://helphive.projects.himaiz.com",
+	"https://admin.helphive.projects.himaiz.com",
+	"https://api.helphive.projects.himaiz.com",
 ];
 
 export default allowedOrigins;

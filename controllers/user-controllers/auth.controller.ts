@@ -16,6 +16,7 @@ import {
 	sendBookingCancelledNotification,
 	sendBookingCompletedNotification,
 } from "./utils/auth.utils";
+import { SAFE_USER_SELECT, isValidObjectId } from "./utils/booking.utils";
 import { createCometChatUser, updateCometChatUser } from "./utils/cometchat.util";
 import stripe from "../service-accounts/stripe";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -506,7 +507,7 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 		await sendBookingCompletedNotification(
 			booking.userId._id?.toString(),
 			booking.providerId._id?.toString(),
-			bookingId,
+			booking,
 		);
 
 		res.status(200).json({ message: "Booking has been completed." });
@@ -558,7 +559,7 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 		await sendBookingCancelledNotification(
 			booking.userId._id?.toString(),
 			booking.providerId ? booking.providerId._id.toString() : "",
-			bookingId,
+			booking,
 		);
 
 		const payment = await PaymentModel.findOne({ bookingId: booking._id });
@@ -647,32 +648,209 @@ export const handleGeminiChat = async (req: Request, res: Response) => {
 	}
 };
 
+const DEFAULT_NOTIFICATIONS_LIMIT = 20;
+const MAX_NOTIFICATIONS_LIMIT = 50;
+
+const serializeNotification = (notification: any) => {
+	const rawBookingId = notification.bookingId ?? notification.data?.bookingId ?? null;
+	return {
+		_id: notification._id,
+		title: notification.title,
+		message: notification.message,
+		type: notification.type || "general",
+		screen: notification.screen,
+		data: notification.data ?? {},
+		bookingId: rawBookingId && isValidObjectId(rawBookingId.toString()) ? rawBookingId.toString() : null,
+		read: notification.read,
+		createdAt: notification.createdAt,
+		updatedAt: notification.updatedAt,
+	};
+};
+
 export const handleGetNotifications = async (req: Request, res: Response) => {
 	try {
-		const userEmail = req.user;
-		const user = await UserModel.findOne({
-			email: userEmail,
-		});
+		const user = await UserModel.findOne({ email: req.user }).select("_id");
 		if (!user) {
 			return res.status(404).json({
 				message: "User not found.",
 			});
 		}
-		const notifications = await NotificationModel.find({
-			userId: user._id,
-		})
-			.sort({
-				createdAt: -1,
-			})
-			.exec();
+
+		const { cursor, filter = "all" } = req.query;
+		if (filter !== "all" && filter !== "unread") {
+			return res.status(400).json({ message: "Invalid filter." });
+		}
+		if (cursor !== undefined && !isValidObjectId(cursor)) {
+			return res.status(400).json({ message: "Invalid cursor." });
+		}
+		const parsedLimit = parseInt(req.query.limit as string, 10);
+		const limit = Number.isNaN(parsedLimit)
+			? DEFAULT_NOTIFICATIONS_LIMIT
+			: Math.min(Math.max(parsedLimit, 1), MAX_NOTIFICATIONS_LIMIT);
+
+		const userId = String(user._id);
+		const query: Record<string, any> = { userId };
+		if (filter === "unread") query.read = false;
+		if (cursor) query._id = { $lt: cursor };
+
+		const [items, unreadCount] = await Promise.all([
+			NotificationModel.find(query)
+				.sort({ _id: -1 })
+				.limit(limit + 1)
+				.lean()
+				.exec(),
+			NotificationModel.countDocuments({ userId, read: false }),
+		]);
+
+		const hasMore = items.length > limit;
+		const page = hasMore ? items.slice(0, limit) : items;
+		const nextCursor = hasMore ? String(page[page.length - 1]._id) : null;
+
 		res.status(200).json({
-			notifications,
+			notifications: page.map(serializeNotification),
+			nextCursor,
+			hasMore,
+			unreadCount,
 		});
 	} catch (error) {
 		console.error("Error fetching notifications:", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
+	}
+};
+
+export const handleGetUnreadNotificationCount = async (req: Request, res: Response) => {
+	try {
+		const user = await UserModel.findOne({ email: req.user }).select("_id");
+		if (!user) {
+			return res.status(404).json({ message: "User not found." });
+		}
+		const unreadCount = await NotificationModel.countDocuments({ userId: String(user._id), read: false });
+		res.status(200).json({ unreadCount });
+	} catch (error) {
+		console.error("Error fetching unread notification count:", error);
+		res.status(500).json({ message: "An error occurred while processing request." });
+	}
+};
+
+export const handleMarkAllNotificationsAsRead = async (req: Request, res: Response) => {
+	try {
+		const user = await UserModel.findOne({ email: req.user }).select("_id");
+		if (!user) {
+			return res.status(404).json({ message: "User not found." });
+		}
+		const result = await NotificationModel.updateMany({ userId: String(user._id), read: false }, { read: true });
+		res.status(200).json({ modifiedCount: result.modifiedCount });
+	} catch (error) {
+		console.error("Error marking all notifications as read:", error);
+		res.status(500).json({ message: "An error occurred while processing request." });
+	}
+};
+
+export const handleDeleteNotification = async (req: Request, res: Response) => {
+	try {
+		const { notificationId } = req.params;
+		if (!isValidObjectId(notificationId)) {
+			return res.status(400).json({ message: "Invalid notification id." });
+		}
+		const user = await UserModel.findOne({ email: req.user }).select("_id");
+		if (!user) {
+			return res.status(404).json({ message: "User not found." });
+		}
+		const notification = await NotificationModel.findById(notificationId);
+		if (!notification) {
+			return res.status(404).json({ message: "Notification not found." });
+		}
+		if (notification.userId.toString() !== String(user._id)) {
+			return res.status(403).json({ message: "User not authorized to delete this notification." });
+		}
+		await notification.deleteOne();
+		res.status(200).json({ message: "Notification deleted." });
+	} catch (error) {
+		console.error("Error deleting notification:", error);
+		res.status(500).json({ message: "An error occurred while processing request." });
+	}
+};
+
+export const handleGetBookingReceipt = async (req: Request, res: Response) => {
+	try {
+		const { bookingId } = req.params;
+		if (!isValidObjectId(bookingId)) {
+			return res.status(400).json({ message: "Invalid booking id." });
+		}
+		const user = await UserModel.findOne({ email: req.user }).select("_id");
+		if (!user) {
+			return res.status(404).json({ message: "User not found." });
+		}
+
+		const booking: any = await BookingModel.findById(bookingId)
+			.populate("userId", SAFE_USER_SELECT)
+			.populate("providerId", SAFE_USER_SELECT)
+			.exec();
+		if (!booking) {
+			return res.status(404).json({ message: "Booking not found." });
+		}
+
+		const requesterId = String(user._id);
+		const isCustomer = booking.userId?._id.toString() === requesterId;
+		const isProvider = !!booking.providerId && booking.providerId._id.toString() === requesterId;
+		if (!isCustomer && !isProvider) {
+			return res.status(403).json({ message: "User not authorized to view this receipt." });
+		}
+
+		const [payment, earning] = await Promise.all([
+			PaymentModel.findOne({ bookingId: booking._id }).sort({ createdAt: -1 }).exec(),
+			isProvider ? EarningModel.findOne({ bookingId: booking._id }).exec() : null,
+		]);
+
+		const subtotal = booking.rate * booking.hours;
+		// payment.date is set once when the payment is created; updatedAt would move on refunds.
+		const paidAt = payment && payment.status === "completed" ? payment.date : null;
+		const hasRefund = !!payment?.refundId;
+
+		res.status(200).json({
+			receipt: {
+				receiptNumber: `HH-${String(booking._id).slice(-8).toUpperCase()}`,
+				issuedAt: paidAt ?? booking.createdAt,
+				bookingId: String(booking._id),
+				status: booking.status,
+				service: { id: booking.service.id, name: booking.service.name },
+				rate: booking.rate,
+				hours: booking.hours,
+				subtotal,
+				total: payment ? payment.amount : subtotal,
+				currency: "usd",
+				payment: payment
+					? {
+							status: payment.status,
+							amount: payment.amount,
+							paidAt,
+							refundStatus: hasRefund ? payment.refundStatus : null,
+							refundAmount: payment.refundAmount ?? 0,
+							refundedAt:
+								hasRefund && payment.refundStatus === "succeeded" ? payment.refundCreated : null,
+						}
+					: null,
+				customer: {
+					name: `${booking.userId.firstName} ${booking.userId.lastName}`.trim(),
+					email: booking.userId.email,
+				},
+				provider: booking.providerId
+					? { name: `${booking.providerId.firstName} ${booking.providerId.lastName}`.trim() }
+					: null,
+				address: booking.address,
+				startDate: booking.startDate,
+				startedAt: booking.startedAt ?? null,
+				completedAt: booking.completedAt ?? null,
+				cancelledAt: booking.cancelledAt ?? null,
+				cancellationReason: booking.cancellationReason ?? null,
+				earning: isProvider && earning ? { amount: earning.amount, status: earning.status } : null,
+			},
+		});
+	} catch (error) {
+		console.error("Error getting booking receipt:", error);
+		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
 
@@ -683,6 +861,9 @@ export const handleMarkNotificationAsRead = async (req: Request, res: Response) 
 			return res.status(400).json({
 				message: "Notification ID is required.",
 			});
+		}
+		if (!isValidObjectId(notificationId)) {
+			return res.status(400).json({ message: "Invalid notification id." });
 		}
 		const notification = await NotificationModel.findById(notificationId);
 		if (!notification) {

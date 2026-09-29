@@ -5,7 +5,9 @@ import UserModel from "../../dal/models/user.model";
 import stripe from "../service-accounts/stripe";
 
 import { sendNotification, storeNotification } from "../service-accounts/onesignal";
+import { EXPIRED_CANCELLATION_REASON } from "../user-controllers/utils/booking.utils";
 import PaymentModel from "../../dal/models/payment.model";
+import { describeBooking, formatMoney } from "../user-controllers/utils/booking.utils";
 
 export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: Response) => {
 	try {
@@ -67,7 +69,7 @@ export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: R
 		provider.availableBalance += earning.amount;
 		await provider.save();
 
-		await sendPaymentNotification(provider._id as string, earning.amount);
+		await sendPaymentNotification(provider._id as string, earning.amount, booking);
 
 		return res.status(200).json({
 			message: "Payment processed successfully",
@@ -84,20 +86,20 @@ export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: R
 	}
 };
 
-const sendPaymentNotification = async (providerId: string, amount: number) => {
+const sendPaymentNotification = async (providerId: string, amount: number, booking: any) => {
+	const bookingId = booking._id.toString();
 	try {
-		const notificationMessage = {
+		const title = `${formatMoney(amount)} received`;
+		const message = `Earnings from your ${describeBooking(booking)} job were released to your account.`;
+		await sendNotification({
 			include_aliases: { external_id: [providerId] },
-			contents: { en: `Your latest funds were released in your account 🎉` },
-			headings: { en: `$${amount} received in your account!` },
-			data: {
-				screen: "Earnings",
-			},
-		};
-		sendNotification(notificationMessage);
-		storeNotification("Payment Received", `$${amount} received in your account!`, providerId, "Earnings");
+			headings: { en: title },
+			contents: { en: message },
+			data: { screen: "Earnings", bookingId, type: "payment_succeeded" },
+		});
+		await storeNotification(title, message, providerId, "Earnings", "payment_succeeded", bookingId);
 	} catch (error) {
-		console.error(`Error sending payment notification for earning ID: `, error);
+		console.error(`Error sending payment notification for booking ID ${bookingId}: `, error);
 	}
 };
 
@@ -114,16 +116,17 @@ export const handleGoogleCloudTasksBookingExpired = async (req: Request, res: Re
 			return res.status(200).json({ message: "Booking not found" });
 		}
 
-		if (booking.providerId) {
+		if (booking.providerId || booking.status !== "pending") {
 			return res.status(200).json({ message: "Booking is not pending" });
 		}
 
 		booking.status = "cancelled";
 		booking.cancelledAt = new Date();
 		booking.cancelledBy = booking.userId;
+		booking.cancellationReason = EXPIRED_CANCELLATION_REASON;
 		await booking.save();
 
-		await sendBookingExpiredNotification(booking.userId.toString(), bookingId);
+		await sendBookingExpiredNotification(booking.userId.toString(), booking);
 
 		const payment = await PaymentModel.findOne({ bookingId: booking._id }).exec();
 		if (payment) {
@@ -154,22 +157,19 @@ export const handleGoogleCloudTasksBookingExpired = async (req: Request, res: Re
 	}
 };
 
-const sendBookingExpiredNotification = async (userId: string, bookingId: string) => {
+const sendBookingExpiredNotification = async (userId: string, booking: any) => {
+	const bookingId = booking._id.toString();
 	try {
-		const notificationMessage = {
+		const title = "Booking expired";
+		const message = `No provider accepted your ${describeBooking(booking)} booking in time. Any payment will be refunded.`;
+		await sendNotification({
 			include_aliases: { external_id: [userId] },
-			contents: { en: `Your booking request has expired.` },
-			headings: { en: "Booking Expired 🥺" },
-			data: {
-				screen: "BookingDetails",
-				bookingId,
-			},
-		};
-		sendNotification(notificationMessage);
-		storeNotification("Booking Expired", "Your booking request has expired.", userId, "BookingDetails", {
-			bookingId,
+			headings: { en: title },
+			contents: { en: message },
+			data: { screen: "BookingDetails", bookingId, type: "booking_expired" },
 		});
+		await storeNotification(title, message, userId, "BookingDetails", "booking_expired", bookingId);
 	} catch (error) {
-		console.error(`Error sending booking expired notification for booking ID: `, error);
+		console.error(`Error sending booking expired notification for booking ID ${bookingId}: `, error);
 	}
 };

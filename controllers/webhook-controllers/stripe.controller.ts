@@ -9,6 +9,7 @@ import PayoutModel from "../../dal/models/payout.model";
 import { SUPPORT_EMAIL } from "../../config/config";
 import Stripe from "stripe";
 import RefundEmail from "../../emails/refundEmail";
+import { describeBooking, formatMoney } from "../user-controllers/utils/booking.utils";
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 const connectedEndpointSecret = process.env.STRIPE_CONNECTED_WEBHOOK_SECRET || "";
@@ -71,6 +72,7 @@ const updatePaymentStatus = async (paymentIntentId: string, status: "pending" | 
 			console.error(`Booking with ID ${payment.bookingId} not found.`);
 			return;
 		}
+		await sendPaymentSucceededNotification(booking);
 		await sendBookingNotification(payment.bookingId, booking);
 		console.log(`Payment status updated to ${status} for intent ID ${paymentIntentId}.`);
 	} catch (error) {
@@ -78,7 +80,25 @@ const updatePaymentStatus = async (paymentIntentId: string, status: "pending" | 
 	}
 };
 
-const sendBookingNotification = async (bookingId: string, booking: InstanceType<typeof BookingModel>) => {
+const sendPaymentSucceededNotification = async (booking: InstanceType<typeof BookingModel>) => {
+	const bookingId = (booking._id as any).toString();
+	const userId = booking.userId.toString();
+	try {
+		const title = "Payment received";
+		const message = `Your payment for the ${describeBooking(booking)} booking was successful. We are finding you a provider.`;
+		await sendNotification({
+			include_aliases: { external_id: [userId] },
+			headings: { en: title },
+			contents: { en: message },
+			data: { screen: "BookingDetails", bookingId, type: "payment_succeeded" },
+		});
+		await storeNotification(title, message, userId, "BookingDetails", "payment_succeeded", bookingId);
+	} catch (error: any) {
+		console.error(`Error sending payment notification for booking ID ${bookingId}:`, error.response);
+	}
+};
+
+const sendBookingNotification = async (bookingId: any, booking: InstanceType<typeof BookingModel>) => {
 	try {
 		const availableProviders = await UserModel.find({ isProviderAvailable: true });
 		const providersInRadius = availableProviders.filter((provider) => {
@@ -98,23 +118,18 @@ const sendBookingNotification = async (bookingId: string, booking: InstanceType<
 
 		const providerIds = providersInRadius.map((provider) => (provider._id as any).toString());
 
-		const notificationMessage = {
-			include_aliases: { external_id: providerIds },
-			contents: { en: `A new job is available near you.` },
-			headings: { en: "New Order Received!" },
-			data: {
-				screen: "AcceptOrder",
-				bookingId: bookingId,
-			},
-		};
+		const title = "New job available";
+		const message = `A ${describeBooking(booking)} job is available near you. Accept it before someone else does.`;
 
-		await sendNotification(notificationMessage);
+		await sendNotification({
+			include_aliases: { external_id: providerIds },
+			headings: { en: title },
+			contents: { en: message },
+			data: { screen: "AcceptOrder", bookingId: bookingId.toString(), type: "booking_created" },
+		});
 		for (const provider of providerIds) {
-			await storeNotification("New Order Received", "A new job is available near you.", provider, "AcceptOrder", {
-				bookingId,
-			});
+			await storeNotification(title, message, provider, "AcceptOrder", "booking_created", bookingId.toString());
 		}
-		console.log("Notification sent to ids: ", providerIds);
 	} catch (error: any) {
 		console.error(
 			`Error sending booking notification for booking ID ${bookingId} to available providers:`,
@@ -185,6 +200,7 @@ const updatePayoutStatus = async (payoutId: string, status: "paid" | "failed" | 
 			console.error(`Payout with ID ${payoutId} not found.`);
 			return;
 		}
+		const previousStatus = payout.status;
 		payout.status = status;
 		if (status == "failed" || status == "cancelled") {
 			const user = await UserModel.findOne({ _id: payout.userId });
@@ -195,8 +211,28 @@ const updatePayoutStatus = async (payoutId: string, status: "paid" | "failed" | 
 		}
 
 		await payout.save();
+
+		if (status === "paid" && previousStatus !== "paid") {
+			await sendPayoutPaidNotification(payout.userId.toString(), payout.amount);
+		}
 	} catch (error) {
 		console.error(`Error updating payout status for payout ID ${payoutId}:`, error);
+	}
+};
+
+const sendPayoutPaidNotification = async (userId: string, amount: number) => {
+	try {
+		const title = "Payout sent";
+		const message = `Your ${formatMoney(amount)} payout has been paid to your bank account.`;
+		await sendNotification({
+			include_aliases: { external_id: [userId] },
+			headings: { en: title },
+			contents: { en: message },
+			data: { screen: "Earnings", type: "payout_paid" },
+		});
+		await storeNotification(title, message, userId, "Earnings", "payout_paid");
+	} catch (error) {
+		console.error(`Error sending payout notification for user ID ${userId}:`, error);
 	}
 };
 
@@ -208,6 +244,8 @@ const updateRefundStatus = async (refund: Stripe.Refund, status: "pending" | "su
 			console.error(`Refund with ID ${refund.id} not found.`);
 			return;
 		}
+		// Stripe may redeliver refund.updated; only notify on the first transition to succeeded.
+		const alreadySucceeded = payment.refundStatus === "succeeded";
 		payment.refundStatus = status;
 		payment.refundId = refund.id;
 		payment.refundAmount = refund.amount / 100;
@@ -217,7 +255,7 @@ const updateRefundStatus = async (refund: Stripe.Refund, status: "pending" | "su
 		};
 		await payment.save();
 
-		if (status == "succeeded") {
+		if (status == "succeeded" && !alreadySucceeded) {
 			const booking = await BookingModel.findOne({ _id: payment.bookingId });
 			if (!booking) {
 				console.error(`Booking with ID ${payment.bookingId} not found.`);
@@ -229,7 +267,7 @@ const updateRefundStatus = async (refund: Stripe.Refund, status: "pending" | "su
 				return;
 			}
 			await sendRefundEmail(user, payment);
-			await sendRefundNotification(user._id as string, booking._id as string, payment.refundAmount);
+			await sendRefundNotification(user._id as string, booking, payment.refundAmount);
 		}
 	} catch (error) {
 		console.error(`Error updating refund status for refund ID ${refund.id}:`, error);
@@ -259,28 +297,19 @@ const sendRefundEmail = async (user: InstanceType<typeof UserModel>, payment: In
 	}
 };
 
-const sendRefundNotification = async (userId: string, bookingId: string, refundAmount: number) => {
+const sendRefundNotification = async (userId: string, booking: any, refundAmount: number) => {
+	const bookingId = booking._id.toString();
 	try {
-		const notificationMessage = {
+		const title = `${formatMoney(refundAmount)} refunded`;
+		const message = `Your ${describeBooking(booking)} booking was cancelled and ${formatMoney(refundAmount)} was refunded to your original payment method.`;
+		await sendNotification({
 			include_aliases: { external_id: [userId] },
-			contents: { en: `We're sorry. A booking was cancelled.` },
-			headings: { en: `$${refundAmount} Refunded! 👉👈` },
-			data: {
-				screen: "BookingDetails",
-				bookingId,
-			},
-		};
-		sendNotification(notificationMessage);
-		storeNotification(
-			"Booking Refunded",
-			`We're sorry. A booking was cancelled. $${refundAmount} Refunded!`,
-			userId,
-			"BookingDetails",
-			{
-				bookingId,
-			},
-		);
+			headings: { en: title },
+			contents: { en: message },
+			data: { screen: "BookingDetails", bookingId, type: "payment_refunded" },
+		});
+		await storeNotification(title, message, userId, "BookingDetails", "payment_refunded", bookingId);
 	} catch (error) {
-		console.error(`Error sending refund notification for refund ID: `, error);
+		console.error(`Error sending refund notification for booking ID ${bookingId}:`, error);
 	}
 };

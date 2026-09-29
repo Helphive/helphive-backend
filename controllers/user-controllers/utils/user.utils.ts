@@ -1,36 +1,23 @@
+import { describeBooking } from "./booking.utils";
 import { GOOGLE_CLOUD_TASKS_QUEUE_PATH, SERVER_BASE_URL } from "../../../config/config";
 import { googleCloudTasks } from "../../service-accounts/cloud-tasks";
 import { sendNotification, storeNotification } from "../../service-accounts/onesignal";
 
-export const sendBookingStartApprovedNotification = async (userId: string, bookingId: string) => {
+export const sendBookingStartApprovedNotification = async (providerId: string, booking: any) => {
+	const bookingId = booking._id.toString();
 	try {
-		const notificationMessage = {
-			include_aliases: { external_id: [userId] },
-			contents: { en: `Your start request was approved!` },
-			headings: { en: "You can start the job. Your time is being tracked." },
-			data: {
-				screen: "MyOrderDetails",
-				bookingId: bookingId,
-			},
-		};
-		console.log(notificationMessage);
+		const title = "Start request approved";
+		const message = `The customer approved your start request for the ${describeBooking(booking)} job. Your time is now being tracked.`;
 
-		await sendNotification(notificationMessage);
-		await storeNotification(
-			"Booking Start Approved",
-			"Your start request was approved!",
-			userId,
-			"MyOrderDetails",
-			{
-				bookingId,
-			},
-		);
-		console.log("Notification sent to ids: ", userId);
+		await sendNotification({
+			include_aliases: { external_id: [providerId] },
+			headings: { en: title },
+			contents: { en: message },
+			data: { screen: "MyOrderDetails", bookingId, type: "booking_started" },
+		});
+		await storeNotification(title, message, providerId, "MyOrderDetails", "booking_started", bookingId);
 	} catch (error: any) {
-		console.error(
-			`Error sending booking notification for booking ID ${bookingId} to available providers:`,
-			error.response,
-		);
+		console.error(`Error sending booking started notification for booking ID ${bookingId}:`, error.response);
 	}
 };
 

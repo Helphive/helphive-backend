@@ -1,30 +1,41 @@
 import stripe from "../../service-accounts/stripe";
 import { sendNotification, storeNotification } from "../../service-accounts/onesignal";
+import { describeBooking } from "./booking.utils";
 import { CLIENT_BASE_URL } from "../../../config/config";
 
-export const sendBookingStartedNotification = async (userId: string, bookingId: string) => {
+export const sendBookingStartedNotification = async (userId: string, booking: any) => {
+	const bookingId = booking._id.toString();
 	try {
-		const notificationMessage = {
-			include_aliases: { external_id: [userId] },
-			contents: { en: `Your booking requires attention!` },
-			headings: { en: "Please approve the provider's request to start the job." },
-			data: {
-				screen: "BookingDetails",
-				bookingId: bookingId,
-			},
-		};
-		console.log(notificationMessage);
+		const title = "Provider is ready to start";
+		const message = `Your provider is ready to begin the ${describeBooking(booking)}. Please approve to start the job.`;
 
-		await sendNotification(notificationMessage);
-		await storeNotification("Booking Started", "Your booking requires attention!", userId, "BookingDetails", {
-			bookingId,
+		await sendNotification({
+			include_aliases: { external_id: [userId] },
+			headings: { en: title },
+			contents: { en: message },
+			data: { screen: "BookingDetails", bookingId, type: "booking_start_requested" },
 		});
-		console.log("Notification sent to ids: ", userId);
+		await storeNotification(title, message, userId, "BookingDetails", "booking_start_requested", bookingId);
 	} catch (error: any) {
-		console.error(
-			`Error sending booking notification for booking ID ${bookingId} to available providers:`,
-			error.response,
-		);
+		console.error(`Error sending booking start request notification for booking ID ${bookingId}:`, error.response);
+	}
+};
+
+export const sendBookingAcceptedNotification = async (userId: string, providerName: string, booking: any) => {
+	const bookingId = booking._id.toString();
+	try {
+		const title = "Booking accepted";
+		const message = `${providerName} accepted your ${describeBooking(booking)} booking.`;
+
+		await sendNotification({
+			include_aliases: { external_id: [userId] },
+			headings: { en: title },
+			contents: { en: message },
+			data: { screen: "BookingDetails", bookingId, type: "booking_accepted" },
+		});
+		await storeNotification(title, message, userId, "BookingDetails", "booking_accepted", bookingId);
+	} catch (error: any) {
+		console.error(`Error sending booking accepted notification for booking ID ${bookingId}:`, error.response);
 	}
 };
 

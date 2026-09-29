@@ -7,6 +7,7 @@ import UserModel from "../../dal/models/user.model";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
 import { createGoogleCloudTaskBookingExpiredTrigger, sendBookingStartApprovedNotification } from "./utils/user.utils";
+import { SAFE_USER_SELECT, isValidObjectId, withDisplayStatus } from "./utils/booking.utils";
 
 declare module "express" {
 	interface Request {
@@ -129,39 +130,43 @@ export const handleGetUserBookings = async (req: any, res: Response) => {
 		}
 
 		const bookings = await BookingModel.find({ userId: user._id });
+		const allPayments = await PaymentModel.find({ bookingId: { $in: bookings.map((booking) => booking._id) } });
+
+		const paymentsByBooking = new Map<string, typeof allPayments>();
+		for (const payment of allPayments) {
+			const key = payment.bookingId.toString();
+			paymentsByBooking.set(key, [...(paymentsByBooking.get(key) ?? []), payment]);
+		}
 
 		const history = [] as any;
 		const active = [] as any;
 		const scheduled = [] as any;
 
-		await Promise.all(
-			bookings.map(async (booking) => {
-				const payments = await PaymentModel.find({ bookingId: booking._id });
+		for (const booking of bookings) {
+			const bookingDetail = {
+				...withDisplayStatus(booking),
+				payments: (paymentsByBooking.get((booking._id as any).toString()) ?? []).map((payment) => ({
+					amount: payment.amount,
+					date: payment.date,
+					status: payment.status,
+					paymentIntentId: payment.paymentIntentId,
+					clientSecret: payment.clientSecret,
+				})),
+			};
 
-				const bookingDetail = {
-					...booking.toObject(),
-					payments: payments.map((payment) => ({
-						amount: payment.amount,
-						date: payment.date,
-						status: payment.status,
-						paymentIntentId: payment.paymentIntentId,
-						clientSecret: payment.clientSecret,
-					})),
-				};
+			if (booking.status === "cancelled" || booking.status === "completed") {
+				history.push(bookingDetail);
+			} else if ((booking.status === "pending" || booking.status == "in progress") && booking.providerId) {
+				active.push(bookingDetail);
+			} else if (booking.status === "pending" && !booking.providerId) {
+				scheduled.push(bookingDetail);
+			}
+		}
 
-				if (booking.status === "cancelled" || booking.status === "completed") {
-					history.push(bookingDetail);
-				} else if ((booking.status === "pending" || booking.status == "in progress") && booking.providerId) {
-					active.push(bookingDetail);
-				} else if (booking.status === "pending" && !booking.providerId) {
-					scheduled.push(bookingDetail);
-				}
-
-				history.sort((a: any, b: any) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-				active.sort((a: any, b: any) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-				scheduled.sort((a: any, b: any) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-			}),
-		);
+		const byStartDateDesc = (a: any, b: any) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
+		history.sort(byStartDateDesc);
+		active.sort(byStartDateDesc);
+		scheduled.sort(byStartDateDesc);
 
 		res.status(200).json({ history, active, scheduled });
 	} catch (error) {
@@ -178,9 +183,22 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 		if (!bookingId) {
 			return res.status(400).json({ message: "No booking id provided." });
 		}
-		const booking = await BookingModel.findById(bookingId).populate("providerId").exec();
+		if (!isValidObjectId(bookingId)) {
+			return res.status(400).json({ message: "Invalid booking id." });
+		}
+
+		const user = await UserModel.findOne({ email: req.user });
+		if (!user) {
+			return res.status(404).json({ message: "User not found." });
+		}
+
+		const booking = await BookingModel.findById(bookingId).populate("providerId", SAFE_USER_SELECT).exec();
 		if (!booking) {
 			return res.status(404).json({ message: "Booking not found." });
+		}
+
+		if (booking.userId.toString() !== (user._id as any).toString()) {
+			return res.status(403).json({ message: "User not authorized to view this booking." });
 		}
 
 		const payment = await PaymentModel.findOne({ bookingId }).exec();
@@ -189,7 +207,7 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 		}
 
 		res.status(200).json({
-			booking,
+			booking: withDisplayStatus(booking),
 			payment,
 		});
 	} catch (error) {
@@ -207,17 +225,26 @@ export const handleApproveStartJobRequest = async (req: Request, res: Response) 
 			return res.status(400).json({ message: "Booking ID is required." });
 		}
 
+		if (!isValidObjectId(bookingId)) {
+			return res.status(400).json({ message: "Invalid booking id." });
+		}
+
+		const user = await UserModel.findOne({ email: req.user });
 		const booking = await BookingModel.findById(bookingId);
 
 		if (!booking || booking.status !== "pending" || !booking.userApprovalRequested || !booking?.providerId) {
 			return res.status(404).json({ message: "Booking not found or not pending." });
 		}
 
+		if (!user || booking.userId.toString() !== (user._id as any).toString()) {
+			return res.status(403).json({ message: "User not authorized to approve this booking." });
+		}
+
 		booking.status = "in progress";
 		booking.startedAt = new Date();
 		await booking.save();
 
-		await sendBookingStartApprovedNotification(booking.providerId?.toString(), bookingId);
+		await sendBookingStartApprovedNotification(booking.providerId.toString(), booking);
 
 		res.status(200).json({ message: "Booking has been started." });
 	} catch (error) {

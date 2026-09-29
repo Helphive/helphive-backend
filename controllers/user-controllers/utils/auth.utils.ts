@@ -1,85 +1,69 @@
 import { sendNotification, storeNotification } from "../../service-accounts/onesignal";
 import { googleCloudTasks } from "../../service-accounts/cloud-tasks";
+import { describeBooking } from "./booking.utils";
 import { GOOGLE_CLOUD_TASKS_QUEUE_PATH, SERVER_BASE_URL } from "../../../config/config";
 
-export const sendBookingCompletedNotification = async (userId: string, providerId: string, bookingId: string) => {
+export const sendBookingCompletedNotification = async (userId: string, providerId: string, booking: any) => {
+	const bookingId = booking._id.toString();
 	try {
-		const notificationMessage1 = {
-			include_aliases: { external_id: [userId] },
-			contents: { en: `Booking Complete` },
-			headings: { en: "You got the requested service." },
-			data: {
+		const details = describeBooking(booking);
+		const recipients = [
+			{
+				id: userId,
 				screen: "BookingDetails",
-				bookingId: bookingId,
+				title: "Booking completed",
+				message: `Your ${details} has been completed. Thanks for using HelpHive!`,
 			},
-		};
-		const notificationMessage2 = {
-			include_aliases: { external_id: [providerId] },
-			contents: { en: `Booking Complete` },
-			headings: { en: "You job is now complete." },
-			data: {
+			{
+				id: providerId,
 				screen: "MyOrderDetails",
-				bookingId: bookingId,
+				title: "Job completed",
+				message: `Your ${details} job is complete. Your earnings will be released shortly.`,
 			},
-		};
-		console.log(notificationMessage1);
-		console.log(notificationMessage2);
-
-		await sendNotification(notificationMessage1);
-		await sendNotification(notificationMessage2);
-		await storeNotification("Booking Complete", "You got the requested service.", userId, "BookingDetails", {
-			bookingId,
-		});
-		await storeNotification("Booking Complete", "You job is now complete.", providerId, "MyOrderDetails", {
-			bookingId,
-		});
-		console.log("Notification sent to ids: ", userId);
+		];
+		for (const { id, screen, title, message } of recipients) {
+			await sendNotification({
+				include_aliases: { external_id: [id] },
+				headings: { en: title },
+				contents: { en: message },
+				data: { screen, bookingId, type: "booking_completed" },
+			});
+			await storeNotification(title, message, id, screen, "booking_completed", bookingId);
+		}
 	} catch (error: any) {
-		console.error(
-			`Error sending booking notification for booking ID ${bookingId} to available providers:`,
-			error.response,
-		);
+		console.error(`Error sending booking completed notification for booking ID ${bookingId}:`, error.response);
 	}
 };
 
-export const sendBookingCancelledNotification = async (userId: string, providerId: string, bookingId: string) => {
+export const sendBookingCancelledNotification = async (userId: string, providerId: string, booking: any) => {
+	const bookingId = booking._id.toString();
 	try {
-		const notificationMessage1 = {
-			include_aliases: { external_id: [userId] },
-			contents: { en: `Booking Cancelled` },
-			headings: { en: "Your booking has been cancelled." },
-			data: {
+		const details = describeBooking(booking);
+		const recipients = [
+			{
+				id: userId,
 				screen: "BookingDetails",
-				bookingId: bookingId,
+				title: "Booking cancelled",
+				message: `Your ${details} booking has been cancelled.`,
 			},
-		};
-		await sendNotification(notificationMessage1);
-		await storeNotification("Booking Cancelled", "Your booking has been cancelled.", userId, "BookingDetails", {
-			bookingId,
-		});
+		];
 		if (providerId) {
-			const notificationMessage2 = {
-				include_aliases: { external_id: [providerId] },
-				contents: { en: `Booking Cancelled` },
-				headings: { en: "A booking has been cancelled." },
-				data: {
-					screen: "MyOrderDetails",
-					bookingId: bookingId,
-				},
-			};
-			await sendNotification(notificationMessage2);
-			await storeNotification(
-				"Booking Cancelled",
-				"A booking has been cancelled.",
-				providerId,
-				"MyOrderDetails",
-				{
-					bookingId,
-				},
-			);
+			recipients.push({
+				id: providerId,
+				screen: "MyOrderDetails",
+				title: "Booking cancelled",
+				message: `The ${details} booking has been cancelled.`,
+			});
 		}
-
-		console.log("Notification sent to ids: ", userId);
+		for (const { id, screen, title, message } of recipients) {
+			await sendNotification({
+				include_aliases: { external_id: [id] },
+				headings: { en: title },
+				contents: { en: message },
+				data: { screen, bookingId, type: "booking_cancelled" },
+			});
+			await storeNotification(title, message, id, screen, "booking_cancelled", bookingId);
+		}
 	} catch (error: any) {
 		console.error(`Error sending booking cancellation notification for booking ID ${bookingId}:`, error.response);
 	}

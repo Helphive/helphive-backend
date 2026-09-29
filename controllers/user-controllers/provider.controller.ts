@@ -9,7 +9,12 @@ import ProviderAccountRequest from "../../dal/models/providerapplication.model";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
 import EarningModel from "../../dal/models/earning.model";
-import { generateAccountLink, sendBookingStartedNotification } from "./utils/provider.utils";
+import {
+	generateAccountLink,
+	sendBookingAcceptedNotification,
+	sendBookingStartedNotification,
+} from "./utils/provider.utils";
+import { SAFE_USER_SELECT, isValidObjectId, withDisplayStatus } from "./utils/booking.utils";
 import PayoutModel from "../../dal/models/payout.model";
 import { sendCometChatMessage } from "./utils/cometchat.util";
 
@@ -114,7 +119,7 @@ export const handleGetBookings = async (req: Request, res: Response) => {
 			status: "pending",
 			providerId: null,
 		})
-			.populate("userId")
+			.populate("userId", SAFE_USER_SELECT)
 			.exec();
 		const bookingIds = bookings.map((booking) => booking._id);
 		const payments = await PaymentModel.find({ bookingId: { $in: bookingIds }, status: "completed" });
@@ -140,7 +145,7 @@ export const handleGetBookings = async (req: Request, res: Response) => {
 			})
 			.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
 
-		res.status(200).json({ paidBookings });
+		res.status(200).json({ paidBookings: paidBookings.map(withDisplayStatus) });
 	} catch (error) {
 		console.error("Error getting bookings:", error);
 		res.status(500).json({
@@ -155,9 +160,27 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 		if (!bookingId) {
 			return res.status(400).json({ message: "No booking id provided." });
 		}
-		const booking = await BookingModel.findById(bookingId).populate("userId").exec();
+		if (!isValidObjectId(bookingId)) {
+			return res.status(400).json({ message: "Invalid booking id." });
+		}
+
+		const user = await UserModel.findOne({ email: req.user });
+		if (!user) {
+			return res.status(404).json({ message: "User not found." });
+		}
+
+		const booking = await BookingModel.findById(bookingId).populate("userId", SAFE_USER_SELECT).exec();
 		if (!booking) {
 			return res.status(404).json({ message: "Booking not found." });
+		}
+
+		const isAssignedProvider = booking.providerId?.toString() === (user._id as any).toString();
+		const isOpenForAcceptance = booking.status === "pending" && !booking.providerId;
+		if (!isAssignedProvider && booking.status === "pending" && booking.providerId) {
+			return res.status(409).json({ message: "This order was already accepted by another provider." });
+		}
+		if (!isAssignedProvider && !isOpenForAcceptance) {
+			return res.status(403).json({ message: "User not authorized to view this booking." });
 		}
 
 		const payment = await PaymentModel.findOne({ bookingId }).exec();
@@ -166,7 +189,7 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 		}
 
 		res.status(200).json({
-			booking,
+			booking: withDisplayStatus(booking),
 			payment,
 		});
 	} catch (error) {
@@ -194,9 +217,17 @@ export const handleAcceptBooking = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "Booking ID is required." });
 		}
 
+		if (!isValidObjectId(bookingId)) {
+			return res.status(400).json({ message: "Invalid booking id." });
+		}
+
 		const booking = await BookingModel.findById(bookingId);
 		if (!booking || booking.status !== "pending") {
 			return res.status(404).json({ message: "Booking not found or not pending." });
+		}
+
+		if (booking.providerId) {
+			return res.status(409).json({ message: "Booking has already been accepted by another provider." });
 		}
 
 		const payment = await PaymentModel.findOne({ bookingId: bookingId, status: "completed" });
@@ -224,6 +255,7 @@ export const handleAcceptBooking = async (req: Request, res: Response) => {
 		booking.providerId = user._id as any;
 		await booking.save();
 
+		await sendBookingAcceptedNotification(booking.userId.toString(), user.firstName, booking);
 		await sendCometChatMessage(booking.userId.toString(), (user._id as string).toString());
 
 		res.status(200).json({ message: "Booking accepted successfully." });
@@ -248,7 +280,7 @@ export const handleMyOrders = async (req: Request, res: Response) => {
 		}
 
 		const bookings = await BookingModel.find({ providerId: user._id }).sort({ startDate: 1 });
-		res.status(200).json(bookings);
+		res.status(200).json(bookings.map(withDisplayStatus));
 	} catch (error) {
 		console.error("Error accepting booking:", error);
 		res.status(500).json({
@@ -284,8 +316,7 @@ export const handleStartBooking = async (req: Request, res: Response) => {
 		booking.userApprovalRequested = true;
 		await booking.save();
 
-		console.log(booking.userId.toString(), bookingId);
-		await sendBookingStartedNotification(booking.userId.toString(), bookingId);
+		await sendBookingStartedNotification(booking.userId.toString(), booking);
 
 		res.status(200).json({ message: "Booking started successfully." });
 	} catch (error) {

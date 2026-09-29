@@ -18,6 +18,10 @@ import {
 	handleAzureOpenAIChat,
 	handleGetNotifications,
 	handleMarkNotificationAsRead,
+	handleGetUnreadNotificationCount,
+	handleMarkAllNotificationsAsRead,
+	handleDeleteNotification,
+	handleGetBookingReceipt,
 	handleOpenAIChat,
 } from "../../controllers/user-controllers/auth.controller";
 
@@ -61,6 +65,25 @@ authRoute.post(
 	handleUpdateProfile,
 );
 authRoute.get("/notifications", verifyJWT, verifyRoles("User", "Provider"), handleGetNotifications);
+authRoute.get(
+	"/notifications/unread-count",
+	verifyJWT,
+	verifyRoles("User", "Provider"),
+	handleGetUnreadNotificationCount,
+);
+authRoute.post(
+	"/notifications/mark-all-read",
+	verifyJWT,
+	verifyRoles("User", "Provider"),
+	handleMarkAllNotificationsAsRead,
+);
+authRoute.delete(
+	"/notifications/:notificationId",
+	verifyJWT,
+	verifyRoles("User", "Provider"),
+	handleDeleteNotification,
+);
+authRoute.get("/booking-receipt/:bookingId", verifyJWT, verifyRoles("User", "Provider"), handleGetBookingReceipt);
 authRoute.post("/mark-notification-read", verifyJWT, verifyRoles("User", "Provider"), handleMarkNotificationAsRead);
 authRoute.post("/gemini-chat", verifyJWT, verifyRoles("User", "Provider"), handleGeminiChat);
 authRoute.post("/azure-openai-chat", verifyJWT, verifyRoles("User", "Provider"), handleAzureOpenAIChat);

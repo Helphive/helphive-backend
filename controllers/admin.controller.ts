@@ -9,6 +9,7 @@ import { updateCometChatUser } from "./user-controllers/utils/cometchat.util";
 import Admin from "../dal/models/admin.model";
 import ProviderApplicationModel from "../dal/models/providerapplication.model";
 import UserModel from "../dal/models/user.model";
+import { sendNotification, storeNotification } from "./service-accounts/onesignal";
 import path from "path";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
@@ -220,11 +221,33 @@ export const handleUpdateProviderAccountRequestStatus = async (req: Request, res
 			user.street = providerAccountRequest.street.toLowerCase();
 			await user.save();
 			await updateCometChatUser(userId, destinationPath);
+			await sendAccountReviewNotification(userId, status, message);
 		}
 
 		res.status(200).json("Provider account request and user status updated successfully");
 	} catch (error) {
 		console.error("Error updating provider account request status:", error);
 		res.status(500).json({ message: "Internal server error" });
+	}
+};
+
+const sendAccountReviewNotification = async (userId: string, status: string, reason?: string) => {
+	if (status !== "approved" && status !== "rejected") return;
+	try {
+		const approved = status === "approved";
+		const title = approved ? "Provider account approved" : "Provider application not approved";
+		const message = approved
+			? "Your provider application was approved. You can now accept jobs on HelpHive."
+			: `Your provider application was not approved.${reason ? ` Reason: ${reason}` : ""}`;
+		const type = approved ? "account_approved" : "account_rejected";
+		await sendNotification({
+			include_aliases: { external_id: [userId] },
+			headings: { en: title },
+			contents: { en: message },
+			data: { screen: "Home", type },
+		});
+		await storeNotification(title, message, userId, "Home", type);
+	} catch (error) {
+		console.error(`Error sending account review notification for user ID ${userId}:`, error);
 	}
 };

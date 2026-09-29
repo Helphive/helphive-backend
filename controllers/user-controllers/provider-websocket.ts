@@ -10,7 +10,13 @@ interface AvailabilityMessage {
 	selectedJobs?: number[];
 }
 
+// Latest socket per provider. A reconnect (e.g. on location change) opens a new socket before the old one's
+// close event fires, so only the latest socket may mark the provider offline.
+const activeSockets = new Map<string, WS>();
+
 export const handleProviderAvailabilityWebSocket = (ws: WS, userEmail: string) => {
+	activeSockets.set(userEmail, ws);
+
 	ws.on("message", async (message: Buffer) => {
 		const messageString = message.toString();
 		try {
@@ -46,19 +52,13 @@ export const handleProviderAvailabilityWebSocket = (ws: WS, userEmail: string) =
 	});
 
 	ws.on("close", async () => {
+		if (activeSockets.get(userEmail) !== ws) return;
+		activeSockets.delete(userEmail);
 		try {
-			const user = await UserModel.findOne({ email: userEmail });
-			if (user) {
-				user.isProviderAvailable = false;
-				try {
-					await user.save();
-					console.log("Connection closed, provider availability set to false.");
-				} catch (error) {
-					console.error("Error updating provider availability on disconnect:", error);
-				}
-			}
+			await UserModel.updateOne({ email: userEmail }, { $set: { isProviderAvailable: false } }).exec();
+			console.log("Connection closed, provider availability set to false.");
 		} catch (error) {
-			console.error("Error finding user on disconnect:", error);
+			console.error("Error updating provider availability on disconnect:", error);
 		}
 	});
 };

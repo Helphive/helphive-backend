@@ -12,8 +12,12 @@ import {
 	handleGetEarnings,
 	handleCreatePayout,
 	handleGetStripeExpressLoginLink,
+	handleUpdateProviderAvailability,
 } from "../../controllers/user-controllers/provider.controller";
-import { validateRequestProviderAccountFields } from "../../controllers/user-controllers/validators/provider.validators";
+import {
+	validateRequestProviderAccountFields,
+	validateUpdateProviderAvailability,
+} from "../../controllers/user-controllers/validators/provider.validators";
 
 const upload = multer();
 
@@ -31,6 +35,11 @@ providerRoute.post(
 	handleRequestProviderAccount,
 );
 
+providerRoute.put(
+	"/update-provider-availability",
+	validateUpdateProviderAvailability,
+	handleUpdateProviderAvailability,
+);
 providerRoute.get("/account-approval-screen", handleAccountApprovalScreen);
 providerRoute.get("/get-bookings", handleGetBookings);
 providerRoute.post("/get-booking-by-id", handleGetBookingById);

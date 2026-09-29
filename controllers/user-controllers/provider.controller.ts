@@ -95,6 +95,32 @@ export const handleRequestProviderAccount = async (req: Request, res: Response) 
 	}
 };
 
+export const handleUpdateProviderAvailability = async (req: Request, res: Response) => {
+	const errors = validationResult(req);
+	if (!errors.isEmpty()) {
+		return res.status(400).json({ message: errors.array()[0].msg });
+	}
+	try {
+		const { isProviderAvailable, currentLocation, selectedJobTypes } = req.body;
+		const update: Record<string, unknown> = { isProviderAvailable };
+		if (currentLocation) update.currentLocation = currentLocation;
+		if (selectedJobTypes) update.selectedJobTypes = selectedJobTypes.map((id: number) => ({ id: Number(id) }));
+
+		const user = await UserModel.findOneAndUpdate({ email: req.user }, { $set: update }, { new: true }).exec();
+		if (!user) {
+			return res.status(404).json({ message: "User not found." });
+		}
+		res.status(200).json({
+			isProviderAvailable: user.isProviderAvailable,
+			currentLocation: user.currentLocation,
+			selectedJobTypes: user.selectedJobTypes.map((job) => job.id),
+		});
+	} catch (error) {
+		console.error("Error updating provider availability:", error);
+		res.status(500).json({ message: "An error occurred while processing request." });
+	}
+};
+
 export const handleAccountApprovalScreen = async (req: Request, res: Response) => {
 	try {
 		const userEmail = req.user;

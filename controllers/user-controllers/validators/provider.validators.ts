@@ -62,8 +62,7 @@ export const validateUpdateProviderAvailability = [
 		.isBoolean()
 		.withMessage("isProviderAvailable must be a boolean"),
 	body("currentLocation")
-		.exists()
-		.withMessage("currentLocation is required")
+		.optional({ values: "null" })
 		.isObject()
 		.withMessage("currentLocation must be an object")
 		.custom((value) => {
@@ -75,4 +74,10 @@ export const validateUpdateProviderAvailability = [
 			}
 			return true;
 		}),
+	body("selectedJobTypes")
+		.optional()
+		.isArray({ min: 1 })
+		.withMessage("selectedJobTypes must be a non-empty array")
+		.custom((ids) => ids.every((id: unknown) => [1, 2, 3].includes(Number(id))))
+		.withMessage("selectedJobTypes may only contain 1, 2 or 3"),
 ];

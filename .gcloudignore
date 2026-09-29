@@ -1,0 +1,9 @@
+# Cloud Build upload rules. Unlike .gitignore, keeps package-lock.json, which the Dockerfile copies.
+.gcloudignore
+.git
+.gitignore
+node_modules
+.env
+logs/
+dist/
+yarn.lock

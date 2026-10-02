@@ -1,6 +1,12 @@
 import bcrypt from "bcrypt";
 import mongoose, { Schema, Document, Model } from "mongoose";
 
+export interface UserSession {
+	sessionId: string;
+	refreshTokens: string[];
+	lastUsedAt: Date;
+}
+
 interface Roles {
 	User: boolean;
 	Provider: boolean;
@@ -21,6 +27,7 @@ interface IUser extends Document {
 	resetPasswordTokens: string[];
 	refreshToken: string[];
 	sessionId: string;
+	sessions: UserSession[];
 	roles: Roles;
 	providerApplications: Schema.Types.ObjectId[];
 	providerAccountApproval: boolean;
@@ -62,6 +69,19 @@ const userSchema = new Schema<IUser>(
 		resetPasswordTokens: { type: [String], default: [] },
 		refreshToken: { type: [String], default: [] },
 		sessionId: { type: String, default: "" },
+		// One entry per signed-in device. refreshTokens holds the newest token first plus the previous few,
+		// so a refresh that raced or was interrupted mid-flight does not sign the device out.
+		sessions: {
+			type: [
+				{
+					_id: false,
+					sessionId: { type: String, required: true },
+					refreshTokens: { type: [String], default: [] },
+					lastUsedAt: { type: Date, default: Date.now },
+				},
+			],
+			default: [],
+		},
 		roles: { type: rolesSchema, required: true },
 		providerApplications: [{ type: Schema.Types.ObjectId, ref: "ProviderApplication" }],
 		providerAccountApproval: { type: Boolean, default: false },

@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import path from "path";
 import bcrypt from "bcrypt";
-import jwt, { VerifyErrors } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import UserModel from "../../dal/models/user.model";
 import { oneSignalApi } from "../service-accounts/onesignal";
@@ -17,14 +17,13 @@ import {
 	sendBookingCompletedNotification,
 } from "./utils/auth.utils";
 import { SAFE_USER_SELECT, isValidObjectId } from "./utils/booking.utils";
+import { createSession, endSession, refreshSession, toPublicUser } from "./utils/session.utils";
 import { createCometChatUser, updateCometChatUser } from "./utils/cometchat.util";
 import stripe from "../service-accounts/stripe";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import OpenAI, { AzureOpenAI } from "openai";
 import { AZURE_OPENAI_API_VERSION, AZURE_OPENAI_BASE_URL, AZURE_OPENAI_DEPLOYMENT } from "../../config/config";
 
-const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
-const refreshTokenKey = process.env.REFRESH_TOKEN_SECRET || "";
 const emailVerificationSecret = process.env.EMAIL_VERIFICATION_SECRET || "";
 const ONE_SIGNAL_APP_ID = process.env.ONE_SIGNAL_APP_ID || "";
 
@@ -155,39 +154,12 @@ export const handleLogin = async (req: Request, res: Response) => {
 				return res.status(403).json({ message: "Email is not verified." });
 			}
 
-			// Generate a new sessionId for the user
-			user.sessionId = new mongoose.Types.ObjectId().toString();
-			await user.save();
-
-			const accessToken = jwt.sign(
-				{
-					UserInfo: {
-						email: user.email,
-						roles: user.roles,
-						sessionId: user.sessionId,
-					},
-				},
-				accessTokenKey,
-				{ expiresIn: "10 minutes" },
-			);
-			const newRefreshToken = jwt.sign(
-				{
-					UserInfo: {
-						email: user.email,
-						roles: user.roles,
-						sessionId: user.sessionId,
-					},
-				},
-				refreshTokenKey,
-				{ expiresIn: "30d" },
-			);
-
-			user.refreshToken = [newRefreshToken];
-			await user.save();
+			// Each login is its own session, so signing in on another device no longer signs this one out.
+			const { accessToken, refreshToken: newRefreshToken } = await createSession(user);
 
 			await handleOneSignalSetup(user);
 
-			return res.json({ user, accessToken, refreshToken: newRefreshToken });
+			return res.json({ user: toPublicUser(user), accessToken, refreshToken: newRefreshToken });
 		} else {
 			return res.status(401).json({
 				message: "Email and password do not match.",
@@ -201,85 +173,18 @@ export const handleLogin = async (req: Request, res: Response) => {
 
 export const handleRefreshToken = async (req: Request, res: Response) => {
 	const { refreshToken } = req.body;
-
 	if (!refreshToken) return res.status(401).json({ message: "Unauthorized access!" });
 
 	try {
-		const foundUser = await UserModel.findOne({
-			refreshToken: refreshToken,
-		}).exec();
-
-		if (!foundUser) {
-			jwt.verify(refreshToken, refreshTokenKey, async (error: VerifyErrors | null, decoded: any) => {
-				if (error) return res.status(403).json({ message: "Error MIGHT be forbidden!" });
-
-				const hackedUser = await UserModel.findOne({ email: decoded.email });
-				if (hackedUser) {
-					hackedUser.refreshToken = [];
-					await hackedUser.save();
-				}
-			});
-			return res.status(403).json({ message: "It is not forbidden!" });
-		}
-
-		try {
-			const decoded: any = await new Promise((resolve, reject) => {
-				jwt.verify(refreshToken, refreshTokenKey, (error: VerifyErrors | null, decoded: any) => {
-					if (error) reject(error);
-					else resolve(decoded);
-				});
-			});
-
-			if (foundUser.email !== decoded?.UserInfo?.email || foundUser.sessionId !== decoded?.UserInfo?.sessionId) {
-				foundUser.refreshToken = [];
-				await foundUser.save();
-				return res.status(403).json({ message: "Error is here forbidden!" });
-			}
-
-			// Invalidate the current refresh token
-			foundUser.refreshToken = [];
-			await foundUser.save();
-
-			const accessToken = jwt.sign(
-				{
-					UserInfo: {
-						email: decoded.UserInfo.email,
-						roles: foundUser.roles,
-						sessionId: foundUser.sessionId,
-					},
-				},
-				accessTokenKey,
-				{ expiresIn: "10 minutes" },
-			);
-
-			const newRefreshToken = jwt.sign(
-				{
-					UserInfo: {
-						email: decoded.UserInfo.email,
-						roles: foundUser.roles,
-						sessionId: foundUser.sessionId,
-					},
-				},
-				refreshTokenKey,
-				{ expiresIn: "30d" },
-			);
-
-			// Store the new refresh token
-			foundUser.refreshToken = [newRefreshToken];
-			await foundUser.save();
-			res.json({
-				user: foundUser,
-				accessToken,
-				refreshToken: newRefreshToken,
-			});
-		} catch (error) {
-			console.log(error);
-			foundUser.refreshToken = [];
-			await foundUser.save();
-			return res.status(403).json({ message: "WTF forbidden!" });
-		}
+		const result = await refreshSession(refreshToken);
+		if (!result.ok) return res.status(result.status).json({ message: result.message });
+		res.json({
+			user: toPublicUser(result.user),
+			accessToken: result.accessToken,
+			refreshToken: result.refreshToken,
+		});
 	} catch (error) {
-		console.log(error);
+		console.error("Error refreshing session:", error);
 		res.status(500).json({ message: "Internal server error!" });
 	}
 };
@@ -288,15 +193,7 @@ export const handleLogout = async (req: Request, res: Response) => {
 	try {
 		const { refreshToken } = req.body;
 		if (!refreshToken) return res.sendStatus(204);
-
-		const foundUser = await UserModel.findOne({ refreshToken }).exec();
-		if (!foundUser) {
-			return res.sendStatus(204);
-		}
-
-		foundUser.sessionId = "";
-		foundUser.refreshToken = foundUser.refreshToken.filter((rt) => rt !== refreshToken);
-		await foundUser.save();
+		await endSession(refreshToken);
 		res.sendStatus(204);
 	} catch (error) {
 		console.error("Error during logout:", error);

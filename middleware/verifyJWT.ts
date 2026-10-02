@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt, { VerifyErrors } from "jsonwebtoken";
 import UserModel from "../dal/models/user.model";
+import { isSessionActive } from "../controllers/user-controllers/utils/session.utils";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
 
@@ -34,7 +35,7 @@ export const verifyJWT = async (req: Request, res: Response, next: NextFunction)
 		if (userEmail && sessionId) {
 			try {
 				const user = await UserModel.findOne({ email: userEmail });
-				if (!user || user.sessionId !== sessionId) {
+				if (!user || !isSessionActive(user, sessionId)) {
 					return res.status(403).send({ error: "Access forbidden!" });
 				}
 				req.user = userEmail;

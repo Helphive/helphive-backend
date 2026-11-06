@@ -12,9 +12,6 @@ type Config = {
 		GOOGLE_CLOUD_PROJECT_ID: string;
 		GOOGLE_CLOUD_SERVICE_ACCOUNT_CLIENT_EMAIL: string;
 		GOOGLE_CLOUD_TASKS_QUEUE_PATH: string;
-		AZURE_OPENAI_BASE_URL: string;
-		AZURE_OPENAI_API_VERSION: string;
-		AZURE_OPENAI_DEPLOYMENT: string;
 		COMET_CHAT_BASE_URL: string;
 	};
 };
@@ -37,10 +34,6 @@ const config: Config = {
 		GOOGLE_CLOUD_PROJECT_ID: "helphive",
 		GOOGLE_CLOUD_SERVICE_ACCOUNT_CLIENT_EMAIL: "helphive-backend-server@helphive.iam.gserviceaccount.com",
 		GOOGLE_CLOUD_TASKS_QUEUE_PATH: "projects/helphive/locations/us-central1/queues/helphive-app-queue",
-		AZURE_OPENAI_BASE_URL:
-			"https://maizazureopenai.openai.azure.com/openai/deployments/gpt-4o-helphive/chat/completions?api-version=2024-08-01-preview",
-		AZURE_OPENAI_API_VERSION: "2024-08-01-preview",
-		AZURE_OPENAI_DEPLOYMENT: "gpt-4o-helphive",
 		COMET_CHAT_BASE_URL: "https://26925431c1f0b1aa.api-eu.cometchat.io/v3",
 	},
 };
@@ -55,8 +48,5 @@ export const {
 	GOOGLE_CLOUD_PROJECT_ID,
 	GOOGLE_CLOUD_SERVICE_ACCOUNT_CLIENT_EMAIL,
 	GOOGLE_CLOUD_TASKS_QUEUE_PATH,
-	AZURE_OPENAI_BASE_URL,
-	AZURE_OPENAI_API_VERSION,
-	AZURE_OPENAI_DEPLOYMENT,
 	COMET_CHAT_BASE_URL,
 } = config.common;

@@ -26,11 +26,6 @@ const allowedOrigins: (string | RegExp)[] = [
 	"https://admin.helphive.himaiz.com",
 	"https://api.helphive.himaiz.com",
 
-	// Legacy domains; the Cloudflare Worker redirects these to the ones above.
-	"https://helphive.projects.himaiz.com",
-	"https://admin.helphive.projects.himaiz.com",
-	"https://api.helphive.projects.himaiz.com",
-
 	...envOrigins,
 ];
 

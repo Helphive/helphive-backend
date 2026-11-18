@@ -22,12 +22,12 @@ const config: Config = {
 		SERVER_BASE_URL: `https://ram-strong-cat.ngrok-free.app`,
 	},
 	production: {
-		CLIENT_BASE_URL: "https://api.helphive.projects.himaiz.com",
-		SERVER_BASE_URL: "https://api.helphive.projects.himaiz.com",
+		CLIENT_BASE_URL: "https://api.helphive.himaiz.com",
+		SERVER_BASE_URL: "https://api.helphive.himaiz.com",
 	},
 	common: {
-		VERIFICATION_EMAIL: "verify@helphive.projects.himaiz.com",
-		SUPPORT_EMAIL: "support@helphive.projects.himaiz.com",
+		VERIFICATION_EMAIL: "verify@helphive.himaiz.com",
+		SUPPORT_EMAIL: "support@helphive.himaiz.com",
 		PROVIDER_ACCOUNT_BUCKET: "helphive-provider-applications",
 		USER_PROFILES_BUCKET: "helphive-users",
 		PUBLIC_BUCKET: "helphive-public",

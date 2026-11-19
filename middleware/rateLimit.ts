@@ -319,6 +319,42 @@ export const uploadLimiter = createLimiter({
 	key: byUser,
 });
 
+// Address lookup: per person (a short burst limit per instance and an hourly total shared across instances, which
+// bounds the Google bill) and per client address.
+export const placesLimiters = [
+	createLimiter({ name: "places-ip", rule: RATE_LIMITS.placesPerIp, kind: "local", key: byIp }),
+	createLimiter({ name: "places-user", rule: RATE_LIMITS.placesPerUserMinute, kind: "local", key: byUser }),
+	createLimiter({ name: "places-user-hour", rule: RATE_LIMITS.placesPerUserHour, kind: "shared", key: byUser }),
+];
+
+export const chatSessionLimiter = createLimiter({
+	name: "chat-session",
+	rule: RATE_LIMITS.chatSessionPerUser,
+	kind: "shared",
+	key: byUser,
+});
+
+export const pushRegisterLimiter = createLimiter({
+	name: "push-register",
+	rule: RATE_LIMITS.chatSessionPerUser,
+	kind: "local",
+	key: byUser,
+});
+
+export const chatReadLimiter = createLimiter({
+	name: "chat-read",
+	rule: RATE_LIMITS.chatReadPerUser,
+	kind: "local",
+	key: byUser,
+});
+
+export const chatWriteLimiter = createLimiter({
+	name: "chat-write",
+	rule: RATE_LIMITS.chatWritePerUser,
+	kind: "shared",
+	key: byUser,
+});
+
 // Sign-in (admins): the same three layers with lower numbers.
 export const adminLoginLimiters = [
 	createLimiter({

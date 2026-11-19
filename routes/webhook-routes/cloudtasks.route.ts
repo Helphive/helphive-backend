@@ -1,6 +1,7 @@
 import express, { NextFunction, Request, Response } from "express";
 
 import {
+	handleGoogleCloudTasksChatWindow,
 	handleGoogleCloudTasksBookingExpired,
 	handleGoogleCloudTasksEarningComplete,
 } from "../../controllers/webhook-controllers/cloudtasks.controller";
@@ -48,6 +49,15 @@ cloudTasksRoute.post(
 	tasksLimiter,
 	verifyHeader,
 	handleGoogleCloudTasksBookingExpired,
+);
+
+// Re-checks whether a booking's customer and provider may still chat (scheduled for the end of a grace period).
+cloudTasksRoute.post(
+	"/chat-window",
+	recordTaskRun("chat-window"),
+	tasksLimiter,
+	verifyHeader,
+	handleGoogleCloudTasksChatWindow,
 );
 
 export default cloudTasksRoute;

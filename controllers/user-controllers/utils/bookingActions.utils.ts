@@ -10,6 +10,8 @@ import { sendBookingCompletedNotification } from "./auth.utils";
 import { emitEvent } from "../../../lib/events";
 import type { ActorType } from "../../../lib/requestContext";
 import { PROVIDER_SHARE } from "../../../lib/operations";
+import { syncBookingChat } from "../../../lib/chat/chatSync";
+import { earningsReleaseDelaySeconds } from "../../../lib/platformSettings";
 
 type Id = mongoose.Types.ObjectId | string;
 type BookingDoc = InstanceType<typeof BookingModel>;
@@ -60,6 +62,8 @@ export const cancelBookingTransition = async (input: CancelInput): Promise<Booki
 		cancelled.providerId ? cancelled.providerId.toString() : "",
 		cancelled,
 	);
+	// Chat stays open for the grace period, then closes (scheduled check). In the background; never fails this.
+	void syncBookingChat(cancelled);
 	return cancelled;
 };
 
@@ -102,8 +106,8 @@ export const completeBookingTransition = async (input: CompleteInput): Promise<C
 			amount: input.paymentAmount * PROVIDER_SHARE,
 			date: new Date(),
 		});
-		// REQUIRES ATTENTION: earnings are released 30 seconds after completion (meant to be several days).
-		releaseAt = new Date(Date.now() + 30 * 1000);
+		// EARNINGS_RELEASE_DELAY_SECONDS (default 30, a test-mode setting; meant to be several days in production).
+		releaseAt = new Date(Date.now() + earningsReleaseDelaySeconds() * 1000);
 		await createGoogleCloudTaskPaymentTrigger(String(booking._id), releaseAt);
 	} catch (error) {
 		// Without its release task the earning would never be paid; put the booking back so it can be retried.
@@ -146,5 +150,6 @@ export const completeBookingTransition = async (input: CompleteInput): Promise<C
 		(booking.providerId as mongoose.Types.ObjectId).toString(),
 		completed,
 	);
+	void syncBookingChat(completed);
 	return { completed, earning, releaseAt };
 };

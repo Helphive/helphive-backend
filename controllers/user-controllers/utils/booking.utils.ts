@@ -62,4 +62,35 @@ export const describeBooking = (booking: any): string => {
 	return `${service} on ${date}`;
 };
 
+const cleanText = (value: unknown) =>
+	typeof value === "string" && value.trim() ? value.trim().replace(/\s+/g, " ") : null;
+
+/**
+ * The address a booking stores and shows, plus the picker details. `address`, `latitude` and `longitude` are taken
+ * exactly as today; when the customer typed their own text over the picked address (`customAddress`), that text is
+ * what everyone sees (stored as `address`), the app's address is kept as `submittedAddress`, and the coordinates stay
+ * those of the pin. `location` is null when the request carried none of the picker fields (older apps).
+ */
+export const bookingAddressFields = (input: Record<string, unknown>) => {
+	const address = String(input.address ?? "");
+	const customAddress = cleanText(input.customAddress);
+	const location = {
+		placeId: cleanText(input.placeId),
+		formattedAddress: cleanText(input.formattedAddress),
+		placeName: cleanText(input.placeName),
+		source: cleanText(input.locationSource),
+		customAddress,
+		submittedAddress: customAddress && customAddress !== address ? address : null,
+	};
+	const present = Object.fromEntries(Object.entries(location).filter(([, value]) => value !== null));
+	return {
+		address: customAddress ?? address,
+		location: Object.keys(present).length ? present : null,
+	};
+};
+
+/** The text to show for a booking's address (stored `address` already is it; older documents have nothing else). */
+export const bookingDisplayAddress = (booking: { address?: unknown; location?: { customAddress?: unknown } | null }) =>
+	cleanText(booking.location?.customAddress) ?? (typeof booking.address === "string" ? booking.address : "");
+
 export const formatMoney = (amount: number): string => `$${Number(amount).toFixed(2)}`;

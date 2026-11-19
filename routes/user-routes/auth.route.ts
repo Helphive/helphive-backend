@@ -25,6 +25,9 @@ import { createContact, markSignupFlow, sendMagicLinkEmail } from "../../control
 
 import userRoute from "./user.route";
 import providerRoute from "./provider.route";
+import placesRoute from "./places.route";
+import chatRoute from "./chat.route";
+import pushRoute from "./push.route";
 
 import {
 	validateSignupFields,
@@ -81,6 +84,10 @@ authRoute.post("/reset-password", resetPasswordLimiter, validateResetPasswordFie
 authRoute.use("/reset-password", express.static(path.join(__dirname, "..", "..", "views", "Reset Password")));
 authRoute.use("/user", verifyJWT, verifyRoles("User"), userRoute);
 authRoute.use("/provider", verifyJWT, verifyRoles("Provider"), providerRoute);
+// Address lookup, chat and push registration: each route authenticates itself (verifyJWT + roles), so the guards are visible per route.
+authRoute.use("/places", placesRoute);
+authRoute.use("/chat", chatRoute);
+authRoute.use("/push", pushRoute);
 authRoute.post(
 	"/complete-booking",
 	verifyJWT,

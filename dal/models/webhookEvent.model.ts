@@ -1,6 +1,6 @@
 import mongoose, { Schema, Types } from "mongoose";
 
-// One document per webhook event received (Stripe today), with what came of it. The payload is not stored: Stripe
+// One document per webhook event received (Stripe, and CometChat messages for de-duplication), with what came of it. The payload is not stored: Stripe
 // keeps every event for 30 days, so a replay fetches it again by id (stripe.events.retrieve, with the connected
 // account for connected events), which also re-verifies it came from Stripe.
 export const WEBHOOK_OUTCOMES = ["received", "processed", "ignored", "failed"] as const;
@@ -8,7 +8,7 @@ export type WebhookOutcome = (typeof WEBHOOK_OUTCOMES)[number];
 
 export interface WebhookEventDoc {
 	_id: Types.ObjectId;
-	provider: "stripe";
+	provider: "stripe" | "cometchat";
 	endpoint: string;
 	eventId: string;
 	type: string;
@@ -28,7 +28,7 @@ export interface WebhookEventDoc {
 
 const webhookEventSchema = new Schema<WebhookEventDoc>(
 	{
-		provider: { type: String, enum: ["stripe"], required: true },
+		provider: { type: String, enum: ["stripe", "cometchat"], required: true },
 		endpoint: { type: String, required: true },
 		eventId: { type: String, required: true },
 		type: { type: String, required: true },

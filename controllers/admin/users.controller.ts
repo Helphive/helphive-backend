@@ -18,6 +18,8 @@ import { sendVerificationEmail } from "../email.controller";
 import { closeProviderSocket } from "../user-controllers/provider-websocket";
 import { isDemoAdmin } from "../../config/adminPermissions";
 import { adminActor, recordAudit } from "../../lib/audit";
+import { revokeAllChatTokens } from "../../lib/chat/chatTokens";
+import { forgetAllPush } from "../user-controllers/utils/session.utils";
 import { emitEvent } from "../../lib/events";
 import {
 	DETAIL_TIME_LIMIT_MS,
@@ -466,6 +468,8 @@ export const handleSuspendUser = async (req: Request, res: Response) => {
 		}
 		const sessionsEnded = before.sessions.length + (before.sessionId ? 1 : 0);
 		const socketClosed = before.roles?.Provider ? closeProviderSocket(before.email) : false;
+		void revokeAllChatTokens(String(before._id));
+		forgetAllPush(before);
 		const openBookings = await openBookingsOf(before._id);
 
 		await recordAudit(
@@ -564,6 +568,8 @@ export const handleEndUserSessions = async (req: Request, res: Response) => {
 		if (!before) return res.status(404).json({ message: "User not found." });
 		const sessionsEnded = before.sessions.length + (before.sessionId ? 1 : 0);
 		const socketClosed = before.roles?.Provider ? closeProviderSocket(before.email) : false;
+		void revokeAllChatTokens(String(before._id));
+		forgetAllPush(before);
 		await recordAudit(
 			{
 				action: "users.sessions_ended",

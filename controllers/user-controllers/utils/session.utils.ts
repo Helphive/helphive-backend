@@ -3,6 +3,9 @@ import mongoose from "mongoose";
 import UserModel from "../../../dal/models/user.model";
 import { getRequestContext, type RequestContext } from "../../../lib/requestContext";
 import { isSuspended } from "../../../lib/suspension";
+import { revokeAllChatTokens, revokeChatToken } from "../../../lib/chat/chatTokens";
+import { aliasesToForget } from "../../../lib/push";
+import { forgetPushAliases } from "../../service-accounts/onesignal";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
 const refreshTokenKey = process.env.REFRESH_TOKEN_SECRET || "";
@@ -54,11 +57,20 @@ export const createSession = async (user: UserDoc) => {
 	const tokens = signTokens(user, sessionId);
 	const now = new Date();
 	user.lastActiveAt = now;
-	user.sessions = [
+	const all = [
 		{ sessionId, refreshTokens: [tokens.refreshToken], lastUsedAt: now, createdAt: now, ...sessionDeviceFields() },
 		...[...user.sessions].sort((a, b) => +new Date(b.lastUsedAt) - +new Date(a.lastUsedAt)),
-	].slice(0, MAX_SESSIONS);
+	];
+	user.sessions = all.slice(0, MAX_SESSIONS);
 	await user.save();
+	// Sessions dropped by the cap lose their chat token and their push alias too.
+	const dropped = all.slice(MAX_SESSIONS);
+	for (const session of dropped) revokeChatToken(String(user._id), session.chatToken);
+	if (dropped.length) {
+		forgetPushAliases(
+			aliasesToForget(String(user._id), dropped, user.sessions).filter((a) => a !== String(user._id)),
+		);
+	}
 	return tokens;
 };
 
@@ -144,17 +156,29 @@ export const endSession = async (presentedToken: string): Promise<UserDoc | null
 			? await UserModel.findOne({ $or: [{ "sessions.sessionId": sessionId }, { refreshToken: presentedToken }] })
 			: await UserModel.findOne({ refreshToken: presentedToken });
 	if (!user) return null;
+	const ended = user.sessions.find((s) => s.sessionId === sessionId);
 	user.sessions = user.sessions.filter((s) => s.sessionId !== sessionId);
 	if (user.refreshToken.includes(presentedToken)) {
 		user.refreshToken = [];
 		user.sessionId = "";
 	}
 	await user.save();
+	// The chat token of this session stops working too, and its device stops getting this account's notifications
+	// (also the user-id alias of older apps once no session is left). In the background.
+	revokeChatToken(String(user._id), ended?.chatToken);
+	forgetPushAliases(aliasesToForget(String(user._id), ended ? [ended] : [], user.sessions, !!user.sessionId));
 	return user;
 };
 
+/** Removes every push alias of the user (all sessions, and the user id of older apps) in OneSignal. */
+export const forgetAllPush = (user: { _id: unknown; sessions?: { pushAlias?: string }[] | null }) =>
+	forgetPushAliases(aliasesToForget(String(user._id), user.sessions ?? [], []));
+
 /** Signs the user out on every device (the caller saves). Access tokens stop working at their next request. */
 export const endAllSessions = (user: UserDoc) => {
+	// Every chat token of the user is revoked as well, and no device keeps getting their notifications (background).
+	void revokeAllChatTokens(String(user._id));
+	forgetAllPush(user);
 	user.sessions = [];
 	user.refreshToken = [];
 	user.sessionId = "";

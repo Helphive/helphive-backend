@@ -1,0 +1,19 @@
+{
+	"id": "ChIJdd4hrwug2EcRmSrV3Vo6llI",
+	"types": ["lodging", "point_of_interest", "establishment"],
+	"formattedAddress": "Strand, London WC2R 0EZ, UK",
+	"addressComponents": [
+		{ "longText": "Strand", "shortText": "Strand", "types": ["route"], "languageCode": "en" },
+		{ "longText": "London", "shortText": "London", "types": ["postal_town"], "languageCode": "en" },
+		{
+			"longText": "England",
+			"shortText": "England",
+			"types": ["administrative_area_level_1", "political"],
+			"languageCode": "en"
+		},
+		{ "longText": "United Kingdom", "shortText": "GB", "types": ["country", "political"], "languageCode": "en" },
+		{ "longText": "WC2R 0EZ", "shortText": "WC2R 0EZ", "types": ["postal_code"], "languageCode": "en" }
+	],
+	"location": { "latitude": 51.5104, "longitude": -0.1203 },
+	"displayName": { "text": "The Savoy", "languageCode": "en" }
+}

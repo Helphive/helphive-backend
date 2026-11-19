@@ -40,10 +40,19 @@ import {
 	handleGlobalSearch,
 	handleLive,
 	handleOverview,
+	handlePlatformSettings,
 	handleUpdateNote,
 } from "../controllers/admin/operations.controller";
 import {
+	handleGetChatReport,
+	handleListChatReports,
+	handleReinstateChat,
+	handleResolveChatReport,
+	handleSuspendChat,
+} from "../controllers/admin/chat.controller";
+import {
 	idParam,
+	validateResolveChatReport,
 	validateCancelBooking,
 	validateCreateNote,
 	validateOptionalReason,
@@ -58,6 +67,8 @@ const signedIn = (permission: Permission) => [verifyAdminJWT, requirePermission(
 export const registerOperationsRoutes = (router: Router) => {
 	// Overview, live view, global search.
 	router.get("/overview", ...signedIn("operations.read"), handleOverview);
+	// Platform notices (Stripe test mode, earnings release delay): every admin may read them.
+	router.get("/platform/settings", ...signedIn("account.self"), handlePlatformSettings);
 	router.get("/live", ...signedIn("operations.read"), handleLive);
 	router.get("/search", ...signedIn("operations.read"), adminSearchLimiter, handleGlobalSearch);
 
@@ -82,6 +93,19 @@ export const registerOperationsRoutes = (router: Router) => {
 		validateOptionalReason,
 	);
 	userAction("/users/:id/availability-off", "users.availability_off", handleSetAvailabilityOff);
+	userAction("/users/:id/chat-suspend", "users.chat_suspended", handleSuspendChat);
+	userAction("/users/:id/chat-reinstate", "users.chat_reinstated", handleReinstateChat);
+
+	// Chat reports (moderation). Reading a report shows the reported conversation, read live from CometChat.
+	router.get("/chat/reports", ...signedIn("support.read"), handleListChatReports);
+	router.get("/chat/reports/:id", ...signedIn("support.read"), idParam("report"), handleGetChatReport);
+	router.post(
+		"/chat/reports/:id/resolve",
+		...signedIn("support.manage"),
+		idParam("report"),
+		...validateResolveChatReport,
+		audited(["chat.report_resolved"], handleResolveChatReport),
+	);
 
 	// Bookings.
 	router.get("/bookings", ...signedIn("bookings.read"), handleListBookings);

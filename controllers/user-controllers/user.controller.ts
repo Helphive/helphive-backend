@@ -7,7 +7,7 @@ import UserModel from "../../dal/models/user.model";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
 import { createGoogleCloudTaskBookingExpiredTrigger, sendBookingStartApprovedNotification } from "./utils/user.utils";
-import { isValidObjectId, withDisplayStatus } from "./utils/booking.utils";
+import { bookingAddressFields, isValidObjectId, withDisplayStatus } from "./utils/booking.utils";
 import { resolveBookingStart } from "./utils/bookingStart.utils";
 import { COUNTERPARTY_SELECT, withCounterparties } from "./utils/counterparty.utils";
 import { serializePayment } from "./utils/payment.utils";
@@ -33,7 +33,9 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 	}
 
 	try {
-		const { service, rate, startAt, startDate, startTime, hours, address, latitude, longitude } = req.body;
+		const { service, rate, startAt, startDate, startTime, hours, latitude, longitude } = req.body;
+		// address as sent, or the customer's own text over it; plus the picker details when the app sends them.
+		const { address, location } = bookingAddressFields(req.body);
 
 		const userEmail = req.user;
 
@@ -67,6 +69,7 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 			address,
 			latitude,
 			longitude,
+			...(location ? { location } : {}),
 			createdAt: new Date(),
 		});
 		await newBooking.save();

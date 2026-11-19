@@ -1,0 +1,13 @@
+{
+	"id": "EiIxMDAgU3RyYW5kLCBMb25kb24gV0MyUiwgVUsiMBIuChQKEgk",
+	"types": ["street_address"],
+	"formattedAddress": "100 Strand, London WC2R 0AA, UK",
+	"addressComponents": [
+		{ "longText": "100", "shortText": "100", "types": ["street_number"] },
+		{ "longText": "Strand", "shortText": "Strand", "types": ["route"] },
+		{ "longText": "London", "shortText": "London", "types": ["locality", "political"] },
+		{ "longText": "United Kingdom", "shortText": "GB", "types": ["country", "political"] }
+	],
+	"location": { "latitude": 51.5107, "longitude": -0.1219 },
+	"displayName": { "text": "100 Strand" }
+}

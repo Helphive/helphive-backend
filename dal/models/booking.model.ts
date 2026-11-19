@@ -29,6 +29,29 @@ export interface Booking extends Document {
 	cancellationReason: string;
 	/** "HH-" plus the last 8 hex digits of the id, upper case: the receipt number. Set when a booking is created. */
 	reference?: string;
+	/**
+	 * How the address was chosen (from the address picker; absent on older bookings and from older apps). `address`
+	 * above is always the text people see: the customer's own text when they typed over the picked address, else the
+	 * address the app sent. latitude/longitude stay those of the pin.
+	 */
+	location?: BookingLocation | null;
+}
+
+export const LOCATION_SOURCES = ["search", "map", "current_location"] as const;
+export type LocationSource = (typeof LOCATION_SOURCES)[number];
+
+export interface BookingLocation {
+	/** Google place id of the picked place (search or reverse lookup). */
+	placeId?: string | null;
+	/** The address Google returned for it. */
+	formattedAddress?: string | null;
+	/** Hotel or venue name, when the place is one. */
+	placeName?: string | null;
+	source?: LocationSource | null;
+	/** What the customer typed over the picked address; shown instead of it (and stored as `address`). */
+	customAddress?: string | null;
+	/** The `address` the app sent, kept when a custom text replaced it. */
+	submittedAddress?: string | null;
 }
 
 const bookingSchema: Schema = new Schema(
@@ -120,6 +143,20 @@ const bookingSchema: Schema = new Schema(
 		},
 		reference: {
 			type: String,
+		},
+		location: {
+			type: new Schema(
+				{
+					placeId: { type: String },
+					formattedAddress: { type: String },
+					placeName: { type: String },
+					source: { type: String, enum: LOCATION_SOURCES },
+					customAddress: { type: String },
+					submittedAddress: { type: String },
+				},
+				{ _id: false },
+			),
+			default: undefined,
 		},
 	},
 	{ timestamps: true },

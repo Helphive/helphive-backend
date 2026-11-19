@@ -17,6 +17,7 @@ const baseOptions: CorsOptions = {
 		"X-App-Platform",
 		"X-App-Version",
 		"X-Device-Id",
+		"X-App-Id",
 		"X-Request-Id",
 	],
 	// Lets browser clients read when to retry after a 429, and the request id to quote in a problem report.

@@ -39,6 +39,12 @@ const STREET_KEYS = set(
 	"postalCode",
 	"zip",
 	"zipCode",
+	// Booking address picker details.
+	"formattedAddress",
+	"customAddress",
+	"submittedAddress",
+	"placeName",
+	"placeId",
 );
 // Free-text place fields. People type anything into them (one applicant put a street address in "city"), so they
 // are masked whole; only country is kept. An allow-list of "safe" place names was considered and rejected: a short

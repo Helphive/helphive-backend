@@ -1,4 +1,5 @@
 // The operations overview, the live view and the global search (operations.read), and admin notes (notes.manage).
+import { releasePolicy } from "../../lib/platformSettings";
 import { Request, Response } from "express";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
@@ -611,4 +612,12 @@ export const handleDeleteNote = async (req: Request, res: Response) => {
 	} catch (error) {
 		answerError(res, error, "deleting note");
 	}
+};
+
+/**
+ * GET /admin/platform/settings: what the console shows as platform notices. Stripe mode comes from the secret key's
+ * prefix (the key itself is never returned).
+ */
+export const handlePlatformSettings = (_req: Request, res: Response) => {
+	res.json({ earningsRelease: releasePolicy() });
 };

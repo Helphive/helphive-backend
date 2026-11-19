@@ -8,6 +8,8 @@ declare module "express" {
 		user?: string;
 		roles?: { User: boolean; Provider: boolean };
 		providerStatus?: string;
+		/** The session of the access token (chat tokens are issued per session). */
+		sessionId?: string;
 	}
 }
 
@@ -22,6 +24,7 @@ export const verifyJWT = async (req: Request, res: Response, next: NextFunction)
 		req.user = result.email;
 		req.roles = result.user.roles;
 		req.providerStatus = result.user.providerStatus;
+		req.sessionId = result.sessionId;
 		setActor(result.user.roles?.Provider ? "provider" : "user", String(result.user._id), req.context);
 		next();
 	} catch (err) {

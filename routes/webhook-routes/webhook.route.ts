@@ -1,6 +1,7 @@
 import express from "express";
 import stripeRoute from "./stripe.route";
 import cloudTasksRoute from "./cloudtasks.route";
+import cometChatRoute from "./cometchat.route";
 import { rejectOperatorKeys } from "../../middleware/sanitizeInput";
 import { bindRequestContext } from "../../middleware/requestContext";
 
@@ -15,5 +16,8 @@ webhookRoute.use(
 	rejectOperatorKeys,
 	cloudTasksRoute,
 );
+
+// CometChat message payloads are small; media is uploaded to CometChat, never here.
+webhookRoute.use("/cometchat", express.json({ limit: "256kb" }), bindRequestContext, cometChatRoute);
 
 export default webhookRoute;

@@ -1,0 +1,43 @@
+{
+	"suggestions": [
+		{
+			"placePrediction": {
+				"place": "places/ChIJdd4hrwug2EcRmSrV3Vo6llI",
+				"placeId": "ChIJdd4hrwug2EcRmSrV3Vo6llI",
+				"text": {
+					"text": "The Savoy, Strand, London, UK",
+					"matches": [{ "endOffset": 5 }]
+				},
+				"structuredFormat": {
+					"mainText": { "text": "The Savoy", "matches": [{ "endOffset": 5 }] },
+					"secondaryText": { "text": "Strand, London, UK" }
+				},
+				"types": ["lodging", "point_of_interest", "establishment"],
+				"distanceMeters": 1820
+			}
+		},
+		{
+			"placePrediction": {
+				"place": "places/EiIxMDAgU3RyYW5kLCBMb25kb24gV0MyUiwgVUsiMBIuChQKEgk",
+				"placeId": "EiIxMDAgU3RyYW5kLCBMb25kb24gV0MyUiwgVUsiMBIuChQKEgk",
+				"text": { "text": "100 Strand, London WC2R, UK" },
+				"structuredFormat": {
+					"mainText": { "text": "100 Strand" },
+					"secondaryText": { "text": "London WC2R, UK" }
+				},
+				"types": ["street_address", "geocode"],
+				"distanceMeters": 0
+			}
+		},
+		{
+			"placePrediction": {
+				"placeId": "ChIJ8_MXt1sbdkgRCrIAOXkukUk",
+				"text": { "text": "Strand, London, UK" },
+				"structuredFormat": { "mainText": { "text": "Strand" } },
+				"types": ["route", "geocode"]
+			}
+		},
+		{ "queryPrediction": { "text": { "text": "savoy hotels" } } },
+		{ "placePrediction": { "placeId": "bad id with spaces", "text": { "text": "ignored" } } }
+	]
+}

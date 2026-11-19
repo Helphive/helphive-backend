@@ -97,6 +97,8 @@ export const EVENT_CATALOGUE = {
 			amount: "rate x hours",
 			startDate: "start time",
 			leadTimeMs: "start time minus now",
+			locationSource: "search | map | current_location from the address picker (null from older apps)",
+			customAddress: "true when the customer typed their own address text over the picked one",
 		},
 	},
 	"booking.paid": {
@@ -209,6 +211,79 @@ export const EVENT_CATALOGUE = {
 			"An admin write with no business event of its own (notes, ending sessions, resending verification). The audit log has the details.",
 		subjects: ["userId | bookingId | paymentId | applicationId (the target)"],
 		properties: { action: "the audit action name", targetType: "user | booking | payment | application" },
+	},
+	"chat.session_issued": {
+		description: "A chat (CometChat) auth token was issued for a sign-in session.",
+		subjects: ["userId", "providerId (providers)"],
+		properties: { role: "customer | provider" },
+	},
+	"chat.relationship_opened": {
+		description: "A customer and provider may now chat (a booking was accepted, or the demo pair).",
+		subjects: ["userId (customer)", "providerId", "bookingId (one of the bookings allowing it)"],
+		properties: {
+			until: "when it ends if nothing changes (null while a booking is active)",
+			bookings: "bookings allowing it",
+			synced: "CometChat was updated",
+		},
+	},
+	"chat.relationship_closed": {
+		description: "A customer and provider may no longer chat (grace period over, booking released).",
+		subjects: ["userId (customer)", "providerId"],
+		properties: { until: "null", bookings: "0", synced: "CometChat was updated" },
+	},
+	"chat.message_sent": {
+		description: "A chat message was sent (from the CometChat webhook). Counts and kinds only, never the text.",
+		subjects: ["userId (sender)", "providerId (the provider in the conversation)"],
+		properties: {
+			messageId: "CometChat message id",
+			receiverType: "user | group",
+			category: "message | custom | action",
+			type: "text | image | file | ...",
+			textLength: "characters",
+			attachments: "count",
+			attachmentTypes: "MIME types",
+			attachmentBytes: "total size",
+			senderRole: "customer | provider | unknown",
+			pushed: "a push notification was sent",
+		},
+	},
+	"chat.message_removed": {
+		description: "The server deleted a chat message that broke the rules.",
+		subjects: ["userId (sender)"],
+		properties: {
+			messageId: "CometChat message id",
+			reason: "attachment_type | attachment_size | attachment_unknown | no_relationship",
+		},
+	},
+	"chat.user_blocked": {
+		description: "A person blocked a counterparty in chat.",
+		subjects: ["userId (who blocked)"],
+		properties: { source: "api | chat" },
+	},
+	"chat.user_unblocked": {
+		description: "A person unblocked a counterparty.",
+		subjects: ["userId (who unblocked)"],
+		properties: { source: "api | chat" },
+	},
+	"chat.message_reported": {
+		description: "A person reported a chat message or user to HelpHive.",
+		subjects: ["userId (reporter)"],
+		properties: { category: "report category", withMessage: "a specific message was reported" },
+	},
+	"chat.report_resolved": {
+		description: "An admin closed a chat report.",
+		subjects: ["userId (reported person)"],
+		properties: { status: "actioned | dismissed" },
+	},
+	"chat.suspended": {
+		description: "An admin turned chat off for a person.",
+		subjects: ["userId", "providerId (providers)"],
+		properties: {},
+	},
+	"chat.reinstated": {
+		description: "An admin turned chat back on for a person.",
+		subjects: ["userId", "providerId (providers)"],
+		properties: {},
 	},
 	"security.demo_account_blocked": {
 		description: "A shared demo account tried an action that is turned off for it.",

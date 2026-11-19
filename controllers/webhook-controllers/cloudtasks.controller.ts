@@ -9,6 +9,7 @@ import { EXPIRED_CANCELLATION_REASON } from "../user-controllers/utils/booking.u
 import { describeBooking, formatMoney, isValidObjectId } from "../user-controllers/utils/booking.utils";
 import { refundPaymentIfPaid } from "../user-controllers/utils/auth.utils";
 import { emitEvent } from "../../lib/events";
+import { syncBookingChat } from "../../lib/chat/chatSync";
 import log from "../../lib/logger";
 
 export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: Response) => {
@@ -181,5 +182,24 @@ const sendBookingExpiredNotification = async (userId: string, booking: any) => {
 		await storeNotification(title, message, userId, "BookingDetails", "booking_expired", bookingId);
 	} catch (error) {
 		log.error(`Error sending booking expired notification for booking ID ${bookingId}`, error);
+	}
+};
+
+/**
+ * Scheduled for when a booking's chat grace period ends: re-decides whether its customer and provider may still chat
+ * (another booking may keep it open). Idempotent; a missing or unassigned booking is skipped.
+ */
+export const handleGoogleCloudTasksChatWindow = async (req: Request, res: Response) => {
+	try {
+		const { bookingId } = req.body;
+		if (!isValidObjectId(bookingId)) return res.status(200).json({ message: "Booking ID is required" });
+		const booking = await BookingModel.findById(bookingId).select("userId providerId").lean().exec();
+		if (!booking?.providerId) return res.status(200).json({ message: "Booking has no provider" });
+		const result = await syncBookingChat(booking);
+		if (!result) return res.status(500).json({ message: "Chat relationship could not be checked" });
+		return res.status(200).json({ message: result.state.allowed ? "Chat still open" : "Chat closed" });
+	} catch (error) {
+		log.error("Error checking a chat window", error);
+		return res.status(500).json({ message: "Internal server error" });
 	}
 };

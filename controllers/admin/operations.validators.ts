@@ -90,3 +90,9 @@ export const validateRefund = [
 	requiredReason(),
 	rejectIfInvalid,
 ];
+
+export const validateResolveChatReport = [
+	body("status").isIn(["actioned", "dismissed"]).withMessage("status must be actioned or dismissed."),
+	requiredReason(),
+	rejectIfInvalid,
+];

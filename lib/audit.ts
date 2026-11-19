@@ -39,6 +39,10 @@ export const AUDIT_ACTIONS = {
 	"users.email_verified": "Marked a customer's or provider's email as verified.",
 	"users.verification_email_sent": "Resent the verification email (subject to the email policy).",
 	"users.availability_off": "Turned a provider's availability off.",
+	"users.chat_suspended":
+		"Turned chat off for a customer or provider (chat tokens revoked, CometChat role denies all).",
+	"users.chat_reinstated": "Turned chat back on for a customer or provider.",
+	"chat.report_resolved": "Closed a chat report as actioned or dismissed.",
 	"notes.created": "Added an admin note.",
 	"notes.updated": "Edited an admin note.",
 	"notes.deleted": "Deleted an admin note (kept, marked deleted).",

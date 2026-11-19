@@ -56,6 +56,18 @@ export const RATE_LIMITS = {
 	adminSearchPerAdmin: { windowMs: MINUTE, limit: 60 },
 	// Admin refresh: once per access-token lifetime per tab; room for several tabs and retries.
 	adminRefreshPerSession: { windowMs: 15 * MINUTE, limit: 60 },
+	// Address lookup (autocomplete, place details, reverse geocoding). Clients debounce typing (about 300 ms) and
+	// cancel stale requests, so a fast typist sends at most 2-3 a second in bursts; 60 a minute per person covers two
+	// quick searches back to back, and the hourly cap bounds what one account can spend on Google.
+	placesPerUserMinute: { windowMs: MINUTE, limit: 60 },
+	placesPerUserHour: { windowMs: HOUR, limit: 600 },
+	// Per client address: room for several staff of one hotel behind one IP.
+	placesPerIp: { windowMs: MINUTE, limit: 300 },
+	// Chat: a session token per sign-in (plus reconnects), badge and conversation lookups on screen focus, and
+	// reports and blocks, which a person makes rarely.
+	chatSessionPerUser: { windowMs: 15 * MINUTE, limit: 30 },
+	chatReadPerUser: { windowMs: MINUTE, limit: 60 },
+	chatWritePerUser: { windowMs: HOUR, limit: 30 },
 	// Webhooks and tasks: only rejected (unsigned or unauthorised) calls count, so Stripe and Cloud Tasks never are.
 	webhookFailuresPerIp: { windowMs: 15 * MINUTE, limit: 30 },
 	wsConnectionsPerIp: { windowMs: MINUTE, limit: 30 },

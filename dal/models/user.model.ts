@@ -13,6 +13,12 @@ export interface UserSession {
 	platform?: string;
 	appVersion?: string;
 	deviceId?: string;
+	/** CometChat auth token issued for this session (encrypted, lib/chat/chatTokens.ts); revoked when it ends. */
+	chatToken?: string;
+	/** OneSignal external id this session's device signed in with (lib/push.ts); only active sessions get pushes. */
+	pushAlias?: string;
+	/** The chat conversation this device has open (no push for it while `until` is in the future). */
+	chatViewing?: { withUid: string; until: Date } | null;
 }
 
 interface Roles {
@@ -65,6 +71,13 @@ interface IUser extends Document {
 	lastActiveAt?: Date | null;
 	/** When currentLocation was last written (websocket or HTTP availability update). */
 	locationUpdatedAt?: Date | null;
+	/** Set by an admin: no chat session is issued and CometChat denies every chat action. */
+	chatSuspended?: boolean;
+	chatSuspendedAt?: Date | null;
+	chatSuspendedBy?: mongoose.Types.ObjectId | null;
+	chatSuspendedReason?: string | null;
+	/** When this user was last confirmed to exist in CometChat. */
+	chatUserReadyAt?: Date | null;
 }
 
 // Credentials that must never leave the server. Internal code reads them from the document itself.
@@ -78,7 +91,12 @@ export const USER_SECRET_FIELDS = [
 ] as const;
 
 // Admin-only fields: the person never sees who suspended them or the admin's reason.
-export const USER_ADMIN_ONLY_FIELDS = ["suspendedBy", "suspendedReason"] as const;
+export const USER_ADMIN_ONLY_FIELDS = [
+	"suspendedBy",
+	"suspendedReason",
+	"chatSuspendedBy",
+	"chatSuspendedReason",
+] as const;
 
 // Projection for populating or lean-querying users, which bypass the schema transform below.
 export const SAFE_USER_SELECT = [...USER_SECRET_FIELDS, ...USER_ADMIN_ONLY_FIELDS]
@@ -125,6 +143,12 @@ const userSchema = new Schema<IUser>(
 					platform: { type: String },
 					appVersion: { type: String },
 					deviceId: { type: String },
+					chatToken: { type: String },
+					pushAlias: { type: String },
+					chatViewing: {
+						type: new Schema({ withUid: String, until: Date }, { _id: false }),
+						default: undefined,
+					},
 				},
 			],
 			default: [],
@@ -176,6 +200,11 @@ const userSchema = new Schema<IUser>(
 		suspendedReason: { type: String },
 		lastActiveAt: { type: Date },
 		locationUpdatedAt: { type: Date },
+		chatSuspended: { type: Boolean, default: false },
+		chatSuspendedAt: { type: Date },
+		chatSuspendedBy: { type: Schema.Types.ObjectId, ref: "Admin" },
+		chatSuspendedReason: { type: String },
+		chatUserReadyAt: { type: Date },
 	},
 	{
 		timestamps: true,
@@ -190,6 +219,7 @@ userSchema.index({ "roles.Provider": 1, providerStatus: 1, createdAt: -1 });
 userSchema.index({ "roles.User": 1, createdAt: -1 });
 userSchema.index({ providerApplications: 1 });
 userSchema.index({ "sessions.sessionId": 1 });
+userSchema.index({ "sessions.pushAlias": 1 }, { partialFilterExpression: { "sessions.pushAlias": { $exists: true } } });
 userSchema.index({ isProviderAvailable: 1, providerStatus: 1 });
 // Operations console: suspended accounts, last-active filter and sort, and the search. The search indexes compare
 // case-insensitively (collation strength 2) so a prefix is an index range; queries must pass SEARCH_COLLATION.

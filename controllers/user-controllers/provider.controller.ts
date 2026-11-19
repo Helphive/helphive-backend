@@ -19,9 +19,12 @@ import { COUNTERPARTY_SELECT, withCounterparties } from "./utils/counterparty.ut
 import { serializePayment } from "./utils/payment.utils";
 import PayoutModel from "../../dal/models/payout.model";
 import { sendCometChatMessage } from "./utils/cometchat.util";
+import { syncBookingChat } from "../../lib/chat/chatSync";
 import { publicValidationErrors } from "../../middleware/sanitizeInput";
 import { storedFileInfo } from "../../middleware/uploads";
 import { emitEvent } from "../../lib/events";
+import { appFlavorFromHeaders } from "../../lib/appIdentity";
+import { releasePolicy } from "../../lib/platformSettings";
 import log from "../../lib/logger";
 
 const APPLICATION_FIELDS = ["firstName", "lastName", "email", "phone", "country", "state", "city", "street"] as const;
@@ -366,6 +369,8 @@ export const handleAcceptBooking = async (req: Request, res: Response) => {
 		);
 
 		await sendBookingAcceptedNotification(booking.userId.toString(), user.firstName, accepted);
+		// Customer and provider may now chat (CometChat friends), then the first message opens the conversation.
+		await syncBookingChat(accepted);
 		await sendCometChatMessage(booking.userId.toString(), String(user._id));
 
 		res.status(200).json({ message: "Booking accepted successfully." });
@@ -493,7 +498,11 @@ export const handleGetStripeConnectedAccount = async (req: Request, res: Respons
 				account.id;
 		}
 
-		const connectedAccountOnboardingLink = await generateAccountLink(connectedAccountId);
+		// The return link sends the person back to the app (old or renamed) or the web app that asked for it.
+		const connectedAccountOnboardingLink = await generateAccountLink(
+			connectedAccountId,
+			appFlavorFromHeaders(req.headers),
+		);
 
 		return res.status(200).json({ connectedAccountOnboardingLink });
 	} catch (error) {
@@ -523,7 +532,14 @@ export const handleGetEarnings = async (req: Request, res: Response) => {
 		const payouts = await PayoutModel.find({ userId: user._id }).sort({ createdAt: -1 });
 
 		const availableBalance = user.availableBalance || 0;
-		return res.status(200).json({ availableBalance, earnings, payouts });
+		// releasePolicy is additive: { delaySeconds, testMode, notice } for apps that show when earnings are released.
+		const { delaySeconds, testMode, notice } = releasePolicy();
+		return res.status(200).json({
+			availableBalance,
+			earnings,
+			payouts,
+			releasePolicy: { delaySeconds, testMode, notice },
+		});
 	} catch (error) {
 		log.error("Error getting provider earnings", error);
 		return res.status(500).json({ message: "Internal server error" });

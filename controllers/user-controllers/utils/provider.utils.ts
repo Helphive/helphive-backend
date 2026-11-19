@@ -2,6 +2,7 @@ import stripe from "../../service-accounts/stripe";
 import { sendNotification, storeNotification } from "../../service-accounts/onesignal";
 import { describeBooking } from "./booking.utils";
 import { CLIENT_BASE_URL } from "../../../config/config";
+import { stripeOnboardingUrls, type AppFlavor } from "../../../lib/appIdentity";
 import log from "../../../lib/logger";
 
 export const sendBookingStartedNotification = async (userId: string, booking: any) => {
@@ -40,11 +41,11 @@ export const sendBookingAcceptedNotification = async (userId: string, providerNa
 	}
 };
 
-export const generateAccountLink = async (connectedAccountId: string) => {
+/** Stripe onboarding link whose return and refresh URLs remember which app asked (lib/appIdentity.ts). */
+export const generateAccountLink = async (connectedAccountId: string, flavor: AppFlavor = "legacy") => {
 	const accountLink = await stripe.accountLinks.create({
 		account: connectedAccountId,
-		refresh_url: `${CLIENT_BASE_URL}/stripe-onboarding?refresh=true`,
-		return_url: `${CLIENT_BASE_URL}/stripe-onboarding`,
+		...stripeOnboardingUrls(CLIENT_BASE_URL, flavor),
 		type: "account_onboarding",
 	});
 

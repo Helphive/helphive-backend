@@ -18,6 +18,7 @@ import log from "./lib/logger";
 import { errorHandler } from "./middleware/errorHandler";
 import { globalLimiter } from "./middleware/rateLimit";
 import { rejectOperatorKeys } from "./middleware/sanitizeInput";
+import { appLinkWebFallback, buildAssetLinks, parseAppFlavor, stripeOnboardingRedirect } from "./lib/appIdentity";
 
 dotenv.config();
 
@@ -50,6 +51,11 @@ for (const name of [
 	"GOOGLE_CLOUD_TASKS_SECRET",
 	"ADMIN_ACCESS_TOKEN_SECRET",
 	"ADMIN_MFA_ENCRYPTION_KEY",
+	"GOOGLE_MAPS_SERVER_API_KEY",
+	"COMETCHAT_APP_ID",
+	"COMETCHAT_REGION",
+	"COMETCHAT_WEBHOOK_PASSWORD",
+	"CHAT_TOKEN_ENCRYPTION_KEY",
 ]) {
 	if (!process.env[name]) log.warn(`${name} is not set; see the notes in .env.example.`);
 }
@@ -117,6 +123,13 @@ app.use(cookieParser());
 app.use(bindRequestContext);
 app.use(rejectOperatorKeys);
 
+// Android App Links for both application ids (lib/appIdentity.ts). Served from code so the two ids and their
+// fingerprints live in one place; Google's verifier needs JSON with a 200 and no redirect.
+app.get("/.well-known/assetlinks.json", (_req: Request, res: Response) => {
+	res.setHeader("Cache-Control", "public, max-age=3600");
+	res.json(buildAssetLinks());
+});
+
 app.use(
 	express.static(path.join(__dirname, "public"), {
 		setHeaders: (res, filePath) => {
@@ -136,9 +149,17 @@ app.use("/admin", adminRoute);
 app.use("/email", emailRoute);
 
 app.get("/stripe-onboarding", (req: Request, res: Response) => {
-	// Back into the app after Stripe onboarding. Only the one known flag is passed on.
-	const deepLink = `helphivenow://stripe-onboarding?refresh=${req.query.refresh === "true" ? "true" : "false"}`;
-	res.redirect(deepLink);
+	// Back to whichever app asked for the onboarding link (the `app` marker it carries); links without one, and any
+	// unknown value, go to the installed app's helphivenow:// scheme as before. Only known values are passed on.
+	res.redirect(stripeOnboardingRedirect(parseAppFlavor(req.query.app), req.query.refresh === "true"));
+});
+
+// https App Links into the renamed app (/app/chat/<uid>, /app/bookings/<id>). With the app installed Android opens
+// it directly; otherwise the browser lands here and goes to the same page of the web app.
+app.get("/app/*", (req: Request, res: Response, next) => {
+	const target = appLinkWebFallback(req.path.slice("/app/".length));
+	if (!target) return next();
+	res.redirect(target);
 });
 
 app.all("*", (req: Request, res: Response) => {

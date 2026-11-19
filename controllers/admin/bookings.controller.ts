@@ -20,7 +20,8 @@ import {
 	roundMoney,
 	fromCents,
 } from "../../lib/operations";
-import { getBookingDisplayStatus } from "../user-controllers/utils/booking.utils";
+import { bookingDisplayAddress, getBookingDisplayStatus } from "../user-controllers/utils/booking.utils";
+import { syncChatPair } from "../../lib/chat/chatSync";
 import { hasRefund } from "../user-controllers/utils/payment.utils";
 import { refundPaymentIfPaid, type RefundIfPaidResult } from "../user-controllers/utils/auth.utils";
 import { cancelBookingTransition, completeBookingTransition } from "../user-controllers/utils/bookingActions.utils";
@@ -161,9 +162,11 @@ export const bookingCore = (booking: any) => ({
 	amount: roundMoney(booking.rate * booking.hours),
 	startDate: booking.startDate,
 	scheduledEnd: new Date(new Date(booking.startDate).getTime() + Number(booking.hours || 0) * HOUR),
-	address: booking.address,
+	address: bookingDisplayAddress(booking),
 	latitude: booking.latitude,
 	longitude: booking.longitude,
+	// Picker details (null on older bookings): Google's address, place name, how it was chosen, and custom text.
+	location: booking.location ?? null,
 	customerId: booking.userId ? String(booking.userId) : null,
 	providerId: booking.providerId ? String(booking.providerId) : null,
 	createdAt: booking.createdAt,
@@ -491,6 +494,8 @@ export const handleReleaseBooking = async (req: Request, res: Response) => {
 			req,
 		);
 		await notifyRelease(released, String(providerId));
+		// The removed provider and the customer may no longer chat (unless another booking keeps it open).
+		void syncChatPair(released.userId, providerId);
 		// Providers only see paid jobs; tell nearby available ones, as when it was first paid.
 		const paid = await PaymentModel.exists({ bookingId: released._id, status: "completed" });
 		if (paid) await sendBookingNotification(released._id, released);

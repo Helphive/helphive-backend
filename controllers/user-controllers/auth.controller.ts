@@ -9,12 +9,8 @@ import PaymentModel from "../../dal/models/payment.model";
 import EarningModel from "../../dal/models/earning.model";
 import NotificationModel from "../../dal/models/notification.model";
 import { googleCloudStorage, userProfilesBucket } from "../service-accounts/cloud-storage";
-import {
-	createGoogleCloudTaskPaymentTrigger,
-	refundPaymentIfPaid,
-	sendBookingCancelledNotification,
-	sendBookingCompletedNotification,
-} from "./utils/auth.utils";
+import { refundPaymentIfPaid } from "./utils/auth.utils";
+import { cancelBookingTransition, completeBookingTransition } from "./utils/bookingActions.utils";
 import { isValidObjectId } from "./utils/booking.utils";
 import { COUNTERPARTY_SELECT } from "./utils/counterparty.utils";
 import { hasRefund } from "./utils/payment.utils";
@@ -27,6 +23,7 @@ import { storedFileInfo } from "../../middleware/uploads";
 import { recordSuccessfulSignIn } from "../../middleware/rateLimit";
 import { emitEvent, userActorType } from "../../lib/events";
 import { hashEmail } from "../../lib/redact";
+import { SUSPENDED_SIGN_IN, isSuspended } from "../../lib/suspension";
 import log from "../../lib/logger";
 
 const emailVerificationSecret = process.env.EMAIL_VERIFICATION_SECRET || "";
@@ -169,6 +166,18 @@ export const handleLogin = async (req: Request, res: Response) => {
 		const passwordMatch = await bcrypt.compare(password, user?.password ?? DUMMY_PASSWORD_HASH);
 		const role = user?.roles?.Provider ? "provider" : "customer";
 		if (user && passwordMatch) {
+			if (isSuspended(user)) {
+				emitEvent(
+					{
+						type: "auth.sign_in_failed",
+						actor: { type: "anonymous" },
+						subjects: { userId: user._id },
+						properties: { reason: "suspended", emailHash: hashEmail(String(email)) },
+					},
+					req,
+				);
+				return res.status(SUSPENDED_SIGN_IN.status).json({ ...SUSPENDED_SIGN_IN.body });
+			}
 			if (!user.isEmailVerified) {
 				emitEvent(
 					{
@@ -472,64 +481,18 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 		}
 
 		// Claim the transition atomically: a double tap or both parties completing at once creates one earning.
-		const completed = await BookingModel.findOneAndUpdate(
-			{ _id: booking._id, status: "in progress" },
-			{ $set: { status: "completed", completedAt: new Date(), completedBy: user._id } },
-			{ new: true },
-		).exec();
-		if (!completed) {
+		const completedBy = requesterId === booking.userId.toString() ? "customer" : "provider";
+		const result = await completeBookingTransition({
+			booking,
+			paymentAmount: payment.amount,
+			completedBy: user._id as any,
+			by: completedBy,
+			actor: { type: completedBy === "customer" ? "user" : "provider", id: user._id as any },
+			req,
+		});
+		if (!result) {
 			return res.status(400).json({ message: "Booking is not in progress." });
 		}
-
-		let earning: InstanceType<typeof EarningModel> | null = null;
-		let releaseAt: Date;
-		try {
-			earning = await EarningModel.create({
-				bookingId: booking._id,
-				amount: payment.amount * 0.95,
-				date: new Date(),
-			});
-			// REQUIRES ATTENTION: earnings are released 30 seconds after completion (meant to be several days).
-			releaseAt = new Date(Date.now() + 30 * 1000);
-			await createGoogleCloudTaskPaymentTrigger(String(booking._id), releaseAt);
-		} catch (error) {
-			// Without its release task the earning would never be paid; put the booking back so it can be retried.
-			await BookingModel.updateOne(
-				{ _id: booking._id, status: "completed" },
-				{ $set: { status: "in progress", completedAt: null, completedBy: null } },
-			);
-			if (earning) await EarningModel.deleteOne({ _id: earning._id });
-			throw error;
-		}
-
-		const subjects = { userId: booking.userId, providerId: booking.providerId, bookingId: booking._id };
-		const completedBy = requesterId === booking.userId.toString() ? "customer" : "provider";
-		emitEvent(
-			{
-				type: "booking.completed",
-				actor: { type: completedBy === "customer" ? "user" : "provider", id: user._id },
-				subjects,
-				properties: {
-					by: completedBy,
-					durationMs: completed.startedAt
-						? completed.completedAt.getTime() - completed.startedAt.getTime()
-						: null,
-					bookedHours: completed.hours,
-				},
-			},
-			req,
-		);
-		emitEvent(
-			{
-				type: "earning.created",
-				actor: { type: "system" },
-				subjects: { ...subjects, earningId: earning._id },
-				properties: { amount: earning.amount, releaseAt },
-			},
-			req,
-		);
-
-		await sendBookingCompletedNotification(booking.userId.toString(), booking.providerId.toString(), completed);
 
 		res.status(200).json({ message: "Booking has been completed." });
 	} catch (error) {
@@ -570,35 +533,17 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 			return res.status(400).json(notPending);
 		}
 
-		const cancelled = await BookingModel.findOneAndUpdate(
-			{ _id: booking._id, status: "pending" },
-			{ $set: { status: "cancelled", cancelledAt: new Date(), cancelledBy: user._id } },
-			{ new: true },
-		).exec();
+		const cancelledBy = requesterId === booking.userId.toString() ? "customer" : "provider";
+		const cancelled = await cancelBookingTransition({
+			bookingId: booking._id as any,
+			cancelledBy: user._id as any,
+			by: cancelledBy,
+			actor: { type: cancelledBy === "customer" ? "user" : "provider", id: user._id as any },
+			req,
+		});
 		if (!cancelled) {
 			return res.status(400).json(notPending);
 		}
-
-		const cancelledBy = requesterId === booking.userId.toString() ? "customer" : "provider";
-		emitEvent(
-			{
-				type: "booking.cancelled",
-				actor: { type: cancelledBy === "customer" ? "user" : "provider", id: user._id },
-				subjects: { userId: cancelled.userId, providerId: cancelled.providerId, bookingId: cancelled._id },
-				properties: {
-					by: cancelledBy,
-					reason: cancelled.cancellationReason ?? null,
-					wasAccepted: !!cancelled.providerId,
-				},
-			},
-			req,
-		);
-
-		await sendBookingCancelledNotification(
-			cancelled.userId.toString(),
-			cancelled.providerId ? cancelled.providerId.toString() : "",
-			cancelled,
-		);
 
 		await refundPaymentIfPaid(String(cancelled._id));
 

@@ -142,7 +142,10 @@ export const handleUpdateProviderAvailability = async (req: Request, res: Respon
 	try {
 		const { isProviderAvailable, currentLocation, selectedJobTypes } = req.body;
 		const update: Record<string, unknown> = { isProviderAvailable };
-		if (currentLocation) update.currentLocation = currentLocation;
+		if (currentLocation) {
+			update.currentLocation = currentLocation;
+			update.locationUpdatedAt = new Date();
+		}
 		if (selectedJobTypes) update.selectedJobTypes = selectedJobTypes.map((id: number) => ({ id: Number(id) }));
 
 		const previous = await UserModel.findOneAndUpdate({ email: req.user }, { $set: update }, { new: false }).exec();

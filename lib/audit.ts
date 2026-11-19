@@ -33,6 +33,20 @@ export const AUDIT_ACTIONS = {
 	"applications.approved": "Approved a provider application.",
 	"applications.rejected": "Rejected a provider application.",
 	"demo.write_refused": "The demo admin tried a write; refused (sampled, metadata.demo = true).",
+	"users.suspended": "Suspended a customer or provider: sign-in, refresh, the API and the provider socket refused.",
+	"users.reinstated": "Lifted a suspension.",
+	"users.sessions_ended": "Ended every app session of a customer or provider.",
+	"users.email_verified": "Marked a customer's or provider's email as verified.",
+	"users.verification_email_sent": "Resent the verification email (subject to the email policy).",
+	"users.availability_off": "Turned a provider's availability off.",
+	"notes.created": "Added an admin note.",
+	"notes.updated": "Edited an admin note.",
+	"notes.deleted": "Deleted an admin note (kept, marked deleted).",
+	"bookings.cancelled": "Cancelled a booking on behalf of the customer or the provider (app refund rules).",
+	"bookings.released": "Removed the provider from an accepted booking so another provider can accept it.",
+	"bookings.resolved_completed": "Marked a stuck in-progress booking completed (the provider's earning is created).",
+	"bookings.resolved_cancelled": "Cancelled a stuck in-progress booking (full refund or none, as chosen).",
+	"payments.refunded": "Refunded a payment in full or in part through Stripe.",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTIONS;

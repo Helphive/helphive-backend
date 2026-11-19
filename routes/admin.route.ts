@@ -51,6 +51,8 @@ import {
 	validateUpdateProviderAccountRequestStatus,
 } from "../controllers/user-controllers/validators/admin.validators";
 import { optionalAdminJWT, verifyAdminJWT } from "../middleware/verifyAdminJWT";
+import { audited } from "../middleware/audited";
+import { registerOperationsRoutes } from "./adminOperations.route";
 import { requirePermission } from "../middleware/requirePermission";
 import {
 	demoAdminRequestLimiter,
@@ -86,9 +88,14 @@ adminRoute.post("/login", demoAdminSignInLimiter, ...adminLoginLimiters, validat
 adminRoute.post("/login/mfa", ...adminMfaLimiters, validateLoginMfa, handleLoginMfa);
 adminRoute.post("/refresh", ...adminRefreshLimiters, handleRefresh);
 adminRoute.post("/logout", optionalAdminJWT, handleLogout);
-adminRoute.post("/logout-all", ...signedIn("account.self"), handleLogoutAll);
+adminRoute.post("/logout-all", ...signedIn("account.self"), audited(["auth.logout_all"], handleLogoutAll));
 adminRoute.get("/sessions", ...signedIn("account.self"), handleListSessions);
-adminRoute.delete("/sessions/:id", ...signedIn("account.self"), sessionIdParam, handleRevokeSession);
+adminRoute.delete(
+	"/sessions/:id",
+	...signedIn("account.self"),
+	sessionIdParam,
+	audited(["auth.session.revoked"], handleRevokeSession),
+);
 
 // Own account.
 adminRoute.get("/account", ...signedIn("account.self"), handleGetAccount);
@@ -98,67 +105,87 @@ adminRoute.post(
 	...signedIn("account.self"),
 	adminPasswordChangeLimiter,
 	validateChangePassword,
-	handleChangePassword,
+	audited(["account.password.changed"], handleChangePassword),
 );
 adminRoute.get("/mfa", ...signedIn("account.self"), handleGetMfa);
-adminRoute.post("/mfa/enroll", ...signedIn("account.self"), handleEnrollMfa);
-adminRoute.post("/mfa/confirm", ...signedIn("account.self"), ...adminMfaLimiters, validateTotpCode, handleConfirmMfa);
+adminRoute.post(
+	"/mfa/enroll",
+	...signedIn("account.self"),
+	audited(["account.mfa.enrollment_started"], handleEnrollMfa),
+);
+adminRoute.post(
+	"/mfa/confirm",
+	...signedIn("account.self"),
+	...adminMfaLimiters,
+	validateTotpCode,
+	audited(["account.mfa.enabled"], handleConfirmMfa),
+);
 adminRoute.post(
 	"/mfa/disable",
 	...signedIn("account.self"),
 	...adminMfaLimiters,
 	validateSecondFactor,
-	handleDisableMfa,
+	audited(["account.mfa.disabled"], handleDisableMfa),
 );
 adminRoute.post(
 	"/mfa/recovery-codes",
 	...signedIn("account.self"),
 	...adminMfaLimiters,
 	validateTotpCode,
-	handleRegenerateRecoveryCodes,
+	audited(["account.mfa.recovery_codes_regenerated"], handleRegenerateRecoveryCodes),
 );
 
 // Admin management.
 adminRoute.get("/admins", ...signedIn("admins.manage"), handleListAdmins);
-adminRoute.post("/admins", ...signedIn("admins.manage"), validateCreateAdmin, handleCreateAdmin);
+adminRoute.post(
+	"/admins",
+	...signedIn("admins.manage"),
+	validateCreateAdmin,
+	audited(["admins.created"], handleCreateAdmin),
+);
 adminRoute.get("/admins/:id", ...signedIn("admins.manage"), adminIdParam, handleGetAdmin);
 adminRoute.patch(
 	"/admins/:id/role",
 	...signedIn("admins.manage"),
 	adminIdParam,
 	validateRoleChange,
-	handleChangeAdminRole,
+	audited(["admins.role_changed"], handleChangeAdminRole),
 );
 adminRoute.post(
 	"/admins/:id/disable",
 	...signedIn("admins.manage"),
 	adminIdParam,
 	validateRequiredReason,
-	handleDisableAdmin,
+	audited(["admins.disabled"], handleDisableAdmin),
 );
 adminRoute.post(
 	"/admins/:id/enable",
 	...signedIn("admins.manage"),
 	adminIdParam,
 	validateOptionalReason,
-	handleEnableAdmin,
+	audited(["admins.enabled"], handleEnableAdmin),
 );
 adminRoute.post(
 	"/admins/:id/sign-out",
 	...signedIn("admins.manage"),
 	adminIdParam,
 	validateOptionalReason,
-	handleForceSignOut,
+	audited(["admins.signed_out"], handleForceSignOut),
 );
 adminRoute.post(
 	"/admins/:id/reset-mfa",
 	...signedIn("admins.manage"),
 	adminIdParam,
 	validateRequiredReason,
-	handleResetAdminMfa,
+	audited(["admins.mfa_reset"], handleResetAdminMfa),
 );
 // Older way to create an admin (the current console's form); creates an operations admin with the given password.
-adminRoute.post("/signup", ...signedIn("admins.manage"), validateSignupFields, handleSignup);
+adminRoute.post(
+	"/signup",
+	...signedIn("admins.manage"),
+	validateSignupFields,
+	audited(["admins.created"], handleSignup),
+);
 
 // Audit log (read only; there is no write, update or delete route).
 adminRoute.get("/audit", ...signedIn("audit.read"), handleListAudit);
@@ -176,7 +203,11 @@ adminRoute.post(
 	"/update-provider-account-request-status",
 	...signedIn("applications.review"),
 	validateUpdateProviderAccountRequestStatus,
-	handleUpdateProviderAccountRequestStatus,
+	audited(["applications.approved", "applications.rejected"], handleUpdateProviderAccountRequestStatus),
 );
+
+// Operations console: overview, users, bookings, payments, earnings, payouts, live view, search, notes
+// (routes/adminOperations.route.ts). Registered here so the demo guard and masking above cover them.
+registerOperationsRoutes(adminRoute);
 
 export default adminRoute;

@@ -12,6 +12,7 @@ import { describeBooking, formatMoney } from "../user-controllers/utils/booking.
 import { sendEmail } from "../../lib/email";
 import { emitEvent } from "../../lib/events";
 import log from "../../lib/logger";
+import { refundTotals } from "../../lib/operations";
 import { beginStripeDelivery, trackWebhookWork, type WebhookDelivery } from "../../lib/webhookRecorder";
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
@@ -172,13 +173,16 @@ const sendPaymentSucceededNotification = async (booking: InstanceType<typeof Boo
 	}
 };
 
-const sendBookingNotification = async (bookingId: any, booking: InstanceType<typeof BookingModel>) => {
+/** Tells available approved providers within 25 km about an open job (after payment, or when an admin reopens it). */
+export const sendBookingNotification = async (bookingId: any, booking: InstanceType<typeof BookingModel>) => {
 	try {
 		// Only approved providers hear about new jobs; anyone else could not open or accept them anyway.
 		const availableProviders = await UserModel.find({
 			isProviderAvailable: true,
 			"roles.Provider": true,
 			providerStatus: "approved",
+			// Suspension turns availability off; this also covers an update that raced it.
+			suspended: { $ne: true },
 		}).select("_id currentLocation");
 		const providersInRadius = availableProviders.filter((provider) => {
 			const distance = getDistanceFromLatLonInKm(
@@ -320,21 +324,28 @@ const updateRefundStatus = async (
 	try {
 		await delay(5000);
 		if (typeof refund.id !== "string" || !refund.id) return "refund without id";
-		const payment = await PaymentModel.findOne({ refundId: refund.id });
+		// The latest refund is in the top-level fields; an admin's earlier partial refunds are only in `refunds`.
+		const payment = await PaymentModel.findOne({
+			$or: [{ refundId: refund.id }, { "refunds.refundId": refund.id }],
+		});
 		if (!payment) {
 			log.error(`Refund with ID ${refund.id} not found.`);
 			return "refund not found";
 		}
+		const entry = payment.refunds?.find((item) => item.refundId === refund.id);
+		const isLatest = payment.refundId === refund.id;
 		// Stripe may redeliver refund.updated; only notify on the first transition to succeeded.
-		const alreadySucceeded = payment.refundStatus === "succeeded";
-		const previousStatus = payment.refundStatus;
-		payment.refundStatus = status;
-		payment.refundId = refund.id;
-		payment.refundAmount = refund.amount / 100;
-		payment.refundCreated = new Date(refund.created * 1000);
-		payment.destinationDetails = {
-			type: refund.destination_details?.type,
-		};
+		const previousStatus = entry ? entry.status : payment.refundStatus;
+		if (entry) entry.status = status;
+		if (isLatest) {
+			payment.refundStatus = status;
+			// With admin refunds the top-level amount is the total refunded; otherwise this refund's amount, as before.
+			payment.refundAmount = entry ? refundTotals(payment).committedCents / 100 : refund.amount / 100;
+			payment.refundCreated = new Date(refund.created * 1000);
+			payment.destinationDetails = {
+				type: refund.destination_details?.type,
+			};
+		}
 		await payment.save();
 
 		if (previousStatus !== status && (status === "succeeded" || status === "failed" || status === "cancelled")) {
@@ -343,25 +354,12 @@ const updateRefundStatus = async (
 				actor: { type: "system" },
 				subjects: { bookingId: payment.bookingId, paymentId: payment._id },
 				properties:
-					status === "succeeded"
-						? { amount: payment.refundAmount }
-						: { status, amount: payment.refundAmount },
+					status === "succeeded" ? { amount: refund.amount / 100 } : { status, amount: refund.amount / 100 },
 			});
 		}
 
-		if (status == "succeeded" && !alreadySucceeded) {
-			const booking = await BookingModel.findOne({ _id: payment.bookingId });
-			if (!booking) {
-				log.error(`Booking with ID ${payment.bookingId} not found.`);
-				return "booking not found";
-			}
-			const user = await UserModel.findOne({ _id: booking.userId });
-			if (!user) {
-				log.error(`User with ID ${booking.userId} not found.`);
-				return "user not found";
-			}
-			await sendRefundEmail(user, payment);
-			await sendRefundNotification(String(user._id), booking, payment.refundAmount);
+		if (status == "succeeded" && previousStatus !== "succeeded") {
+			return await notifyRefundSucceeded(payment, refund.amount / 100, refund.id);
 		}
 	} catch (error) {
 		log.error(`Error updating refund status for refund ID ${refund.id}`, error);
@@ -369,8 +367,36 @@ const updateRefundStatus = async (
 	}
 };
 
+/**
+ * Tells the customer a refund went through: the refund email (under the email policy) and the in-app notification.
+ * Used by the refund webhook and by an admin refund Stripe confirms at once. Returns a note when it could not.
+ */
+export const notifyRefundSucceeded = async (
+	payment: InstanceType<typeof PaymentModel>,
+	amount: number,
+	refundId: string,
+): Promise<string | void> => {
+	const booking = await BookingModel.findOne({ _id: payment.bookingId });
+	if (!booking) {
+		log.error(`Booking with ID ${payment.bookingId} not found.`);
+		return "booking not found";
+	}
+	const user = await UserModel.findOne({ _id: booking.userId });
+	if (!user) {
+		log.error(`User with ID ${booking.userId} not found.`);
+		return "user not found";
+	}
+	await sendRefundEmail(user, payment, amount, refundId);
+	await sendRefundNotification(String(user._id), booking, amount);
+};
+
 /** Refund notice. Skipped (and recorded) for addresses the recipient policy blocks, such as the demo customer. */
-const sendRefundEmail = async (user: InstanceType<typeof UserModel>, payment: InstanceType<typeof PaymentModel>) => {
+const sendRefundEmail = async (
+	user: InstanceType<typeof UserModel>,
+	payment: InstanceType<typeof PaymentModel>,
+	amount: number,
+	refundId: string,
+) => {
 	const result = await sendEmail({
 		template: "refund",
 		from: `Helphive <${supportEmail}>`,
@@ -378,10 +404,10 @@ const sendRefundEmail = async (user: InstanceType<typeof UserModel>, payment: In
 		subject: "A Payment was Refunded to your Account",
 		react: RefundEmail({
 			bookingId: `#${payment.bookingId.toString().slice(-6).toUpperCase()}`,
-			refundAmount: payment.refundAmount,
-			refundId: `#${payment.refundId.slice(-6).toUpperCase()}`,
+			refundAmount: amount,
+			refundId: `#${refundId.slice(-6).toUpperCase()}`,
 			refundCreated: payment.refundCreated || new Date(),
-			refundStatus: payment.refundStatus ?? "pending",
+			refundStatus: "succeeded",
 			destinationAccountType: payment.destinationDetails.type,
 		}),
 		userId: String(user._id),
@@ -393,7 +419,10 @@ const sendRefundNotification = async (userId: string, booking: any, refundAmount
 	const bookingId = booking._id.toString();
 	try {
 		const title = `${formatMoney(refundAmount)} refunded`;
-		const message = `Your ${describeBooking(booking)} booking was cancelled and ${formatMoney(refundAmount)} was refunded to your original payment method.`;
+		const message =
+			booking.status === "cancelled"
+				? `Your ${describeBooking(booking)} booking was cancelled and ${formatMoney(refundAmount)} was refunded to your original payment method.`
+				: `${formatMoney(refundAmount)} for your ${describeBooking(booking)} booking was refunded to your original payment method.`;
 		await sendNotification({
 			include_aliases: { external_id: [userId] },
 			headings: { en: title },

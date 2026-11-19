@@ -13,6 +13,8 @@ export interface WebhookEventDoc {
 	eventId: string;
 	type: string;
 	account?: string | null;
+	/** The id of the event's object (payment intent, refund, payout); recorded from now on, absent on older events. */
+	objectId?: string | null;
 	livemode?: boolean;
 	receivedAt: Date;
 	processedAt?: Date | null;
@@ -31,6 +33,7 @@ const webhookEventSchema = new Schema<WebhookEventDoc>(
 		eventId: { type: String, required: true },
 		type: { type: String, required: true },
 		account: { type: String, default: null },
+		objectId: { type: String, default: null },
 		livemode: { type: Boolean },
 		receivedAt: { type: Date, required: true },
 		processedAt: { type: Date, default: null },
@@ -48,6 +51,8 @@ webhookEventSchema.index({ provider: 1, eventId: 1 }, { unique: true });
 webhookEventSchema.index({ receivedAt: -1 });
 webhookEventSchema.index({ type: 1, receivedAt: -1 });
 webhookEventSchema.index({ outcome: 1, receivedAt: -1 });
+// The events about one payment intent, refund or payout (payment and payout detail pages).
+webhookEventSchema.index({ objectId: 1, receivedAt: -1 });
 
 const WebhookEventModel = mongoose.model<WebhookEventDoc>("WebhookEvent", webhookEventSchema);
 

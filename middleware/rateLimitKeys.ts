@@ -52,6 +52,8 @@ export const RATE_LIMITS = {
 	// and sign-in attempts to the demo email (successes too, since every visitor signs in).
 	demoAdminRequestsPerIp: { windowMs: 5 * MINUTE, limit: 150 },
 	demoAdminSignInsPerIp: { windowMs: HOUR, limit: 30 },
+	// The console's command palette searches as the admin types (debounced): per admin, per instance.
+	adminSearchPerAdmin: { windowMs: MINUTE, limit: 60 },
 	// Admin refresh: once per access-token lifetime per tab; room for several tabs and retries.
 	adminRefreshPerSession: { windowMs: 15 * MINUTE, limit: 60 },
 	// Webhooks and tasks: only rejected (unsigned or unauthorised) calls count, so Stripe and Cloud Tasks never are.

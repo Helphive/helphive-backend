@@ -18,6 +18,12 @@ export interface WebhookDelivery {
 	finish: (outcome: Exclude<WebhookOutcome, "received">, detail?: { note?: string; error?: unknown }) => void;
 }
 
+/** The id of the object an event is about (pi_..., re_..., po_...), so detail pages can find their events. */
+export const webhookObjectId = (event: { data?: { object?: unknown } }): string | null => {
+	const id = (event.data?.object as { id?: unknown } | undefined)?.id;
+	return typeof id === "string" && id.length <= 255 ? id : null;
+};
+
 const errorText = (error: unknown) =>
 	(error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error").slice(0, MAX_ERROR);
 
@@ -27,9 +33,10 @@ const errorText = (error: unknown) =>
  */
 export const beginStripeDelivery = async (
 	endpoint: "platform" | "connected",
-	event: { id: string; type: string; account?: string | null; livemode?: boolean },
+	event: { id: string; type: string; account?: string | null; livemode?: boolean; data?: { object?: unknown } },
 ): Promise<WebhookDelivery> => {
 	const now = new Date();
+	const objectId = webhookObjectId(event);
 	const requestId = getRequestContext()?.requestId ?? null;
 	let recordId: unknown = null;
 	let shouldProcess = true;
@@ -46,6 +53,7 @@ export const beginStripeDelivery = async (
 					eventId: event.id,
 					type: event.type,
 					account: event.account ?? null,
+					objectId,
 					livemode: event.livemode,
 					receivedAt: now,
 					outcome: "received",

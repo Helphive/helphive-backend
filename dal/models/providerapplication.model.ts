@@ -78,6 +78,10 @@ const providerApplicationSchema: Schema = new Schema({
 providerApplicationSchema.index({ status: 1, createdAt: 1 });
 providerApplicationSchema.index({ status: 1, reviewedAt: -1 });
 providerApplicationSchema.index({ email: 1 });
+// Global search: case-insensitive prefixes (queries must pass SEARCH_COLLATION).
+providerApplicationSchema.index({ email: 1 }, { name: "email_ci", collation: { locale: "en", strength: 2 } });
+providerApplicationSchema.index({ lastName: 1 }, { name: "lastName_ci", collation: { locale: "en", strength: 2 } });
+providerApplicationSchema.index({ firstName: 1 }, { name: "firstName_ci", collation: { locale: "en", strength: 2 } });
 
 const ProviderApplicationModel: Model<ProviderApplicationModel> = mongoose.model<ProviderApplicationModel>(
 	"ProviderApplication",

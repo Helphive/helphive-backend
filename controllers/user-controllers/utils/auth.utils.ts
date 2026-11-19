@@ -8,17 +8,25 @@ import { GOOGLE_CLOUD_TASKS_QUEUE_PATH, SERVER_BASE_URL } from "../../../config/
 import { emitEvent } from "../../../lib/events";
 import log from "../../../lib/logger";
 
+export type RefundIfPaidResult =
+	| { outcome: "refund_requested"; refundId: string; amount: number; paymentId: string }
+	| { outcome: "no_payment" | "not_paid" | "already_refunded"; paymentId: string | null };
+
 /**
- * Refunds a booking's payment in full when it was paid and not refunded yet. Used by cancellation and expiry; the
- * idempotency key makes Stripe return the same refund if two of them race.
+ * Refunds a booking's payment in full when it was paid and not refunded yet. Used by cancellation and expiry (and by
+ * an admin cancelling for a party); the idempotency key makes Stripe return the same refund if two of them race.
+ * A payment that already has any refund, including an admin's partial one, is left alone. Returns what it did.
  */
-export const refundPaymentIfPaid = async (bookingId: string) => {
+export const refundPaymentIfPaid = async (bookingId: string): Promise<RefundIfPaidResult> => {
 	const payment = await PaymentModel.findOne({ bookingId }).exec();
-	if (!payment || !payment.paymentIntentId || payment.status !== "completed" || hasRefund(payment)) return;
+	if (!payment) return { outcome: "no_payment", paymentId: null };
+	const paymentId = String(payment._id);
+	if (!payment.paymentIntentId || payment.status !== "completed") return { outcome: "not_paid", paymentId };
+	if (hasRefund(payment) || payment.refunds?.length) return { outcome: "already_refunded", paymentId };
 	const paymentIntent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
 	if (paymentIntent.status !== "succeeded") {
 		log.info(`Payment intent ${payment.paymentIntentId} was not paid, no refund needed.`);
-		return;
+		return { outcome: "not_paid", paymentId };
 	}
 	const refund = await stripe.refunds.create(
 		{ payment_intent: payment.paymentIntentId },
@@ -36,6 +44,7 @@ export const refundPaymentIfPaid = async (bookingId: string) => {
 		subjects: { bookingId: payment.bookingId, paymentId: payment._id },
 		properties: { amount: payment.refundAmount },
 	});
+	return { outcome: "refund_requested", refundId: refund.id, amount: payment.refundAmount, paymentId };
 };
 
 export const sendBookingCompletedNotification = async (userId: string, providerId: string, booking: any) => {

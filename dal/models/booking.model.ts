@@ -27,6 +27,8 @@ export interface Booking extends Document {
 	createdAt: Date;
 	updatedAt: Date;
 	cancellationReason: string;
+	/** "HH-" plus the last 8 hex digits of the id, upper case: the receipt number. Set when a booking is created. */
+	reference?: string;
 }
 
 const bookingSchema: Schema = new Schema(
@@ -116,6 +118,9 @@ const bookingSchema: Schema = new Schema(
 		cancellationReason: {
 			type: String,
 		},
+		reference: {
+			type: String,
+		},
 	},
 	{ timestamps: true },
 );
@@ -127,8 +132,15 @@ bookingSchema.index({ status: 1, providerId: 1, startDate: 1 });
 bookingSchema.index({ status: 1, createdAt: -1 });
 bookingSchema.index({ createdAt: -1 });
 bookingSchema.index({ startDate: -1 });
+// Operations console: completed/cancelled today, lookup by receipt number, and the address prefix search
+// (case-insensitive collation; queries must pass SEARCH_COLLATION).
+bookingSchema.index({ status: 1, completedAt: -1 });
+bookingSchema.index({ status: 1, cancelledAt: -1 });
+bookingSchema.index({ reference: 1 }, { partialFilterExpression: { reference: { $exists: true } } });
+bookingSchema.index({ address: 1 }, { name: "address_ci", collation: { locale: "en", strength: 2 } });
 
 bookingSchema.pre<Booking>("save", function (next) {
+	if (!this.reference && this._id) this.reference = `HH-${String(this._id).slice(-8).toUpperCase()}`;
 	const service = this.service;
 	if (service && service.id) {
 		if (service.id === 1) {

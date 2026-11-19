@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
+import fs from "fs";
+import path from "path";
 
 // Never reach a database from here, whatever .env says.
 delete process.env.DATABASE_URI;
@@ -130,5 +132,105 @@ test("user and provider routes keep their paths", () => {
 		"POST /create-payout",
 	]) {
 		assert.ok(provider.includes(route), route);
+	}
+});
+
+/* eslint-disable @typescript-eslint/no-require-imports */
+const { auditActionsOf } = require("../middleware/audited");
+const { AUDIT_ACTIONS } = require("../lib/audit");
+const { adminSearchLimiter } = require("../middleware/rateLimit");
+/* eslint-enable @typescript-eslint/no-require-imports */
+
+const OPERATIONS_ROUTES: [string, string, string][] = [
+	["GET", "/overview", "operations.read"],
+	["GET", "/live", "operations.read"],
+	["GET", "/search", "operations.read"],
+	["GET", "/users", "users.read"],
+	["GET", "/users/:id", "users.read"],
+	["GET", "/users/:id/balance", "payments.read"],
+	["POST", "/users/:id/suspend", "users.manage"],
+	["POST", "/users/:id/reinstate", "users.manage"],
+	["POST", "/users/:id/end-sessions", "users.manage"],
+	["POST", "/users/:id/verify-email", "users.manage"],
+	["POST", "/users/:id/resend-verification", "users.manage"],
+	["POST", "/users/:id/availability-off", "users.manage"],
+	["GET", "/bookings", "bookings.read"],
+	["GET", "/bookings/:id", "bookings.read"],
+	["POST", "/bookings/:id/cancel", "bookings.manage"],
+	["POST", "/bookings/:id/release", "bookings.manage"],
+	["POST", "/bookings/:id/resolve", "bookings.manage"],
+	["GET", "/payments", "payments.read"],
+	["GET", "/payments/:id", "payments.read"],
+	["POST", "/payments/:id/refund", "payments.refund"],
+	["GET", "/earnings", "payments.read"],
+	["GET", "/earnings/:id", "payments.read"],
+	["GET", "/payouts", "payments.read"],
+	["GET", "/payouts/:id", "payments.read"],
+	["POST", "/notes", "notes.manage"],
+	["PATCH", "/notes/:id", "notes.manage"],
+	["DELETE", "/notes/:id", "notes.manage"],
+];
+
+test("every operations route exists with its permission, after the demo guard and masking", () => {
+	const routes = routesOf(modules.admin);
+	const stack = modules.admin.stack as any[];
+	for (const [method, path, permission] of OPERATIONS_ROUTES) {
+		const route = routes.find((r) => r.method === method && r.path === path);
+		assert.ok(route, `${method} ${path} exists`);
+		assert.equal(route!.handles.find((h: any) => h.permission)?.permission, permission, `${method} ${path}`);
+		const index = stack.findIndex(
+			(layer) => layer.route?.path === path && layer.route.methods[method.toLowerCase()],
+		);
+		assert.ok(index >= 3, `${method} ${path} is registered after the demo middleware`);
+	}
+	const searchRoute = routes.find((r) => r.method === "GET" && r.path === "/search");
+	assert.ok(searchRoute!.handles.includes(adminSearchLimiter), "global search is rate limited");
+	assert.ok(
+		searchRoute!.handles.indexOf(adminSearchLimiter) > searchRoute!.handles.findIndex((h: any) => h.permission),
+		"limited per admin, after authentication",
+	);
+});
+
+test("every admin write route is audited: marked with known actions that the controllers record", () => {
+	const root = path.resolve(__dirname, "..", "controllers");
+	const sources: string[] = [];
+	const walk = (dir: string) => {
+		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+			const full = path.join(dir, entry.name);
+			if (entry.isDirectory()) walk(full);
+			else if (entry.name.endsWith(".ts")) sources.push(fs.readFileSync(full, "utf8"));
+		}
+	};
+	walk(root);
+	const code = sources.join("\n");
+	const writes = routesOf(modules.admin).filter(
+		(r) => r.method !== "GET" && !PUBLIC_ADMIN_ROUTES.has(`${r.method} ${r.path}`),
+	);
+	assert.ok(writes.length >= 28, `${writes.length} write routes`);
+	for (const route of writes) {
+		const id = `${route.method} ${route.path}`;
+		const actions = route.handles.map(auditActionsOf).find(Boolean) as string[] | undefined;
+		assert.ok(actions?.length, `${id} is marked with its audit actions`);
+		assert.equal(
+			route.handles.indexOf(route.handles.find((h: any) => auditActionsOf(h))),
+			route.handles.length - 1,
+		);
+		for (const action of actions!) {
+			assert.ok(action in AUDIT_ACTIONS, `${id}: ${action} is a known audit action`);
+			assert.ok(code.includes(`"${action}"`), `${id}: ${action} is recorded in a controller`);
+		}
+	}
+	// Admin writes also emit a business event: the operations controllers each call emitEvent.
+	for (const file of [
+		"users.controller.ts",
+		"bookings.controller.ts",
+		"payments.controller.ts",
+		"operations.controller.ts",
+	]) {
+		const text = fs.readFileSync(path.join(root, "admin", file), "utf8");
+		assert.ok(
+			/emitEvent\(|cancelBookingTransition\(|completeBookingTransition\(/.test(text),
+			`${file} emits events`,
+		);
 	}
 });

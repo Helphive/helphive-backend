@@ -26,6 +26,8 @@ export const PERMISSIONS = {
 	"settings.manage": "Platform settings.",
 	"admins.manage": "Create admins, change roles, disable, sign out and reset two-step sign-in.",
 	"audit.read": "The admin audit log.",
+	"operations.read": "The operations overview, the live view and the global search.",
+	"notes.manage": "Add, edit and delete admin notes on users, bookings, payments and applications.",
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -62,6 +64,8 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
 		"support.read",
 		"support.manage",
 		"audit.read",
+		"operations.read",
+		"notes.manage",
 	],
 	finance: [
 		"account.self",
@@ -72,6 +76,8 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
 		"payouts.manage",
 		"analytics.read",
 		"audit.read",
+		"operations.read",
+		"notes.manage",
 	],
 	support: [
 		"account.self",
@@ -81,6 +87,8 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
 		"payments.read",
 		"support.read",
 		"support.manage",
+		"operations.read",
+		"notes.manage",
 	],
 	// Read-only: every permission except account.self ends in ".read".
 	analyst: [
@@ -94,6 +102,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
 		"risk.read",
 		"support.read",
 		"audit.read",
+		"operations.read",
 	],
 	// The public demo login: what an analyst can read, nothing else. Every response to it is masked and every write
 	// refused (middleware/demoAdmin.ts); the permissions alone are not what keeps it safe.
@@ -108,6 +117,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
 		"risk.read",
 		"support.read",
 		"audit.read",
+		"operations.read",
 	],
 };
 

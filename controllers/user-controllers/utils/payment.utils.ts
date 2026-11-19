@@ -7,6 +7,9 @@ export const serializePayment = (payment: any, { includeClientSecret }: { includ
 	if (!payment) return payment;
 	const plain = typeof payment.toObject === "function" ? payment.toObject() : { ...payment };
 	if (!includeClientSecret) delete plain.clientSecret;
+	// Admin refund bookkeeping stays on the server; the apps read the top-level refund fields as before.
+	delete plain.refunds;
+	delete plain.refundVersion;
 	if (!hasRefund(plain)) {
 		plain.refundStatus = null;
 		delete plain.refundAmount;

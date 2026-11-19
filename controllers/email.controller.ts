@@ -6,7 +6,7 @@ import UserModel from "../dal/models/user.model";
 import { CLIENT_BASE_URL, VERIFICATION_EMAIL } from "../config/config";
 import { isDemoAccountEmail } from "../config/demoAccounts";
 import { addEmailToken } from "./user-controllers/utils/token.utils";
-import { addAudienceContact, sendEmail } from "../lib/email";
+import { addAudienceContact, sendEmail, type EmailResult } from "../lib/email";
 import { emitEvent } from "../lib/events";
 import log from "../lib/logger";
 
@@ -64,20 +64,7 @@ export const sendMagicLinkEmail = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "Email already verified" });
 		}
 
-		const token = generateEmailLinkToken(String(user._id), user.email, "verify-email", VERIFY_EMAIL_TOKEN_TTL);
-		const verificationLink = `${CLIENT_BASE_URL}/auth/verify-email?token=${token}`;
-
-		user.emailVerificationTokens = addEmailToken(user.emailVerificationTokens, token);
-		await user.save();
-
-		const result = await sendEmail({
-			template: "verify-email",
-			from: `Helphive <${verificationEmail}>`,
-			to: user.email,
-			subject: "Verify Your Email",
-			react: NotionMagicLinkEmail({ loginCode: verificationLink, verificationLink }),
-			userId: String(user._id),
-		});
+		const result = await sendVerificationEmail(user);
 		if (result.status === "failed") {
 			if (res.locals.isSignup) await UserModel.findOneAndDelete({ _id: user._id, isEmailVerified: false });
 			throw new Error(result.error);
@@ -87,6 +74,28 @@ export const sendMagicLinkEmail = async (req: Request, res: Response) => {
 		log.error("Error sending verification email", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
+};
+
+/**
+ * A new verification link for an unverified account: the token is stored (hashed) and the email goes through the
+ * outbound email module, so the recipient policy applies (a blocked address gets nothing, recorded as email.skipped).
+ * Used by the resend endpoint and by an admin resending it from the console.
+ */
+export const sendVerificationEmail = async (user: InstanceType<typeof UserModel>): Promise<EmailResult> => {
+	const token = generateEmailLinkToken(String(user._id), user.email, "verify-email", VERIFY_EMAIL_TOKEN_TTL);
+	const verificationLink = `${CLIENT_BASE_URL}/auth/verify-email?token=${token}`;
+
+	user.emailVerificationTokens = addEmailToken(user.emailVerificationTokens, token);
+	await user.save();
+
+	return sendEmail({
+		template: "verify-email",
+		from: `Helphive <${verificationEmail}>`,
+		to: user.email,
+		subject: "Verify Your Email",
+		react: NotionMagicLinkEmail({ loginCode: verificationLink, verificationLink }),
+		userId: String(user._id),
+	});
 };
 
 export const sendResetPasswordEmail = async (req: Request, res: Response) => {

@@ -112,7 +112,7 @@ test("masking: every personal field type, nested objects and arrays; amounts, st
 	assert.equal(item.email, "j•••@•••.com");
 	assert.equal(item.phone, "•••23");
 	assert.equal(item.street, MASK);
-	assert.equal(item.city, "london");
+	assert.equal(item.city, MASK, "free-text place fields are masked whole");
 	assert.equal(item.country, "uk");
 	assert.deepEqual(item.currentLocation, { latitude: 51.5, longitude: -0.1 });
 	assert.equal(item.stripeConnectedAccountId, MASK);

@@ -4,7 +4,13 @@ import { WebSocketServer, WebSocket as WS } from "ws";
 import UserModel from "../../dal/models/user.model";
 import { verifyAccessToken } from "./utils/token.utils";
 import { isSessionActive } from "./utils/session.utils";
-import { attachProviderSocket, AvailabilityUpdate, MAX_MESSAGE_BYTES, ProviderCheck } from "./provider-websocket-auth";
+import {
+	attachProviderSocket,
+	AvailabilityUpdate,
+	MAX_MESSAGE_BYTES,
+	ProviderCheck,
+	WS_CLOSE,
+} from "./provider-websocket-auth";
 import {
 	FixedWindowCounter,
 	RATE_LIMITS,
@@ -13,6 +19,7 @@ import {
 	ipKey,
 } from "../../middleware/rateLimitKeys";
 import { emitEvent } from "../../lib/events";
+import { isSuspended } from "../../lib/suspension";
 import log from "../../lib/logger";
 
 export const PROVIDER_AVAILABILITY_PATH = "/provider-availability";
@@ -32,7 +39,23 @@ const authenticate = async (token: string): Promise<ProviderCheck> => {
 
 const stillAuthorized = async (email: string, sessionId: string) => {
 	const user = await UserModel.findOne({ email }).exec();
-	return !!user && isSessionActive(user, sessionId) && isApprovedProvider(user);
+	return !!user && !isSuspended(user) && isSessionActive(user, sessionId) && isApprovedProvider(user);
+};
+
+/**
+ * Closes this instance's open socket for a provider (suspension). Sockets on other instances are refused at their
+ * next message, since every message checks stillAuthorized first. Returns whether a socket was closed here.
+ */
+export const closeProviderSocket = (email: string) => {
+	const ws = activeSockets.get(email);
+	if (!ws) return false;
+	try {
+		ws.send(JSON.stringify({ type: "error", code: WS_CLOSE.UNAUTHORIZED, message: "Session has ended." }));
+		ws.close(WS_CLOSE.UNAUTHORIZED, "Session has ended.");
+	} catch {
+		// Already closing.
+	}
+	return true;
 };
 
 /** Records a change of availability (not location-only updates, which arrive every few seconds). */
@@ -54,7 +77,10 @@ const recordAvailabilityChange = (
 
 const saveAvailability = async (email: string, update: AvailabilityUpdate) => {
 	const set: Record<string, unknown> = { isProviderAvailable: update.isProviderAvailable };
-	if (update.currentLocation) set.currentLocation = update.currentLocation;
+	if (update.currentLocation) {
+		set.currentLocation = update.currentLocation;
+		set.locationUpdatedAt = new Date();
+	}
 	if (update.selectedJobs) set.selectedJobTypes = update.selectedJobs.map((id) => ({ id }));
 	// Same update as before; the previous value tells whether availability actually changed.
 	const previous = await UserModel.findOneAndUpdate(

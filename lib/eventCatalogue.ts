@@ -14,9 +14,19 @@ export const EVENT_CATALOGUE = {
 		properties: { role: "customer | provider" },
 	},
 	"user.email_verified": {
-		description: "The verification link was used.",
+		description: "The verification link was used, or an admin marked the email verified.",
 		subjects: ["userId"],
-		properties: {},
+		properties: { by: "admin, when an admin marked it (absent for the link)" },
+	},
+	"user.suspended": {
+		description: "An admin suspended the account; its sessions ended and provider availability went off.",
+		subjects: ["userId", "providerId (providers)"],
+		properties: { upcomingBookings: "open bookings the person is part of (not cancelled automatically)" },
+	},
+	"user.reinstated": {
+		description: "An admin lifted the suspension.",
+		subjects: ["userId", "providerId (providers)"],
+		properties: { suspendedForMs: "how long the account was suspended, when known" },
 	},
 	"user.profile_updated": {
 		description: "The person changed their profile.",
@@ -35,7 +45,7 @@ export const EVENT_CATALOGUE = {
 		description: "Customer or provider sign-in refused (rate-limited attempts are not counted here).",
 		subjects: ["userId (when the account exists)"],
 		properties: {
-			reason: "bad_credentials | email_unverified",
+			reason: "bad_credentials | email_unverified | suspended",
 			emailHash: "keyed hash of the typed email, to group attempts without storing it",
 		},
 	},
@@ -73,7 +83,7 @@ export const EVENT_CATALOGUE = {
 		subjects: ["providerId"],
 		properties: {
 			available: "new value",
-			via: "http | websocket | disconnect",
+			via: "http | websocket | disconnect | admin",
 			jobTypes: "selected job type ids, when sent",
 		},
 	},
@@ -117,16 +127,27 @@ export const EVENT_CATALOGUE = {
 	"booking.completed": {
 		description: "The booking was completed.",
 		subjects: ["userId", "providerId", "bookingId"],
-		properties: { by: "customer | provider", durationMs: "completed minus started", bookedHours: "hours booked" },
+		properties: {
+			by: "customer | provider | admin",
+			durationMs: "completed minus started",
+			bookedHours: "hours booked",
+		},
 	},
 	"booking.cancelled": {
-		description: "The booking was cancelled by a person.",
+		description: "The booking was cancelled by a person (or by an admin on behalf of one).",
 		subjects: ["userId", "providerId (when assigned)", "bookingId"],
 		properties: {
-			by: "customer | provider",
+			by: "customer | provider | admin",
+			onBehalfOf: "customer | provider, when an admin cancelled",
+			wasInProgress: "true when an admin cancelled a booking already in progress",
 			reason: "reason text when given",
 			wasAccepted: "a provider had accepted",
 		},
+	},
+	"booking.released": {
+		description: "An admin removed the provider from an accepted booking; it is open for other providers again.",
+		subjects: ["userId", "providerId (the provider removed)", "bookingId"],
+		properties: { untilStartMs: "start time minus now", hadStartRequest: "the provider had asked to start" },
 	},
 	"booking.expired": {
 		description: "Nobody accepted before the start time; the booking was cancelled and refunded.",
@@ -144,9 +165,9 @@ export const EVENT_CATALOGUE = {
 		properties: { failureCode: "Stripe error code", declineCode: "card decline code" },
 	},
 	"refund.created": {
-		description: "A refund was requested from Stripe (cancellation or expiry).",
+		description: "A refund was requested from Stripe (cancellation, expiry, or an admin refund).",
 		subjects: ["bookingId", "paymentId"],
-		properties: { amount: "refund amount" },
+		properties: { amount: "refund amount", by: "admin, for an admin refund", partial: "less than was paid" },
 	},
 	"refund.succeeded": {
 		description: "Stripe confirmed the refund.",
@@ -182,6 +203,12 @@ export const EVENT_CATALOGUE = {
 		description: "Stripe reported the payout failed or was cancelled; the amount went back to the balance.",
 		subjects: ["providerId", "payoutId"],
 		properties: { status: "failed | cancelled", amount: "amount" },
+	},
+	"admin.action_taken": {
+		description:
+			"An admin write with no business event of its own (notes, ending sessions, resending verification). The audit log has the details.",
+		subjects: ["userId | bookingId | paymentId | applicationId (the target)"],
+		properties: { action: "the audit action name", targetType: "user | booking | payment | application" },
 	},
 	"security.demo_account_blocked": {
 		description: "A shared demo account tried an action that is turned off for it.",

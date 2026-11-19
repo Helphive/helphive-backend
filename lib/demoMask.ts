@@ -25,6 +25,7 @@ const EMAIL_KEYS = set(
 	"recipientEmail",
 	"customerEmail",
 	"providerEmail",
+	"authorEmail",
 );
 const PHONE_KEYS = set("phone", "phoneNumber", "mobile", "tel", "telephone");
 const STREET_KEYS = set(
@@ -39,8 +40,35 @@ const STREET_KEYS = set(
 	"zip",
 	"zipCode",
 );
+// Free-text place fields. People type anything into them (one applicant put a street address in "city"), so they
+// are masked whole; only country is kept. An allow-list of "safe" place names was considered and rejected: a short
+// list would leave most real values masked anyway, and matching a typed value against it cannot tell a town from a
+// street of the same name. Coarse coordinates on the live view already show where things are.
+const PLACE_KEYS = set(
+	"city",
+	"state",
+	"town",
+	"county",
+	"region",
+	"province",
+	"district",
+	"suburb",
+	"locality",
+	"neighbourhood",
+	"neighborhood",
+);
 const COORDINATE_KEYS = set("latitude", "longitude", "lat", "lng", "lon");
-const NETWORK_KEYS = set("ip", "lastIp", "remoteIp", "ipAddress", "clientIp", "deviceId", "userAgent", "lastUserAgent");
+const NETWORK_KEYS = set(
+	"ip",
+	"lastIp",
+	"remoteIp",
+	"ipAddress",
+	"clientIp",
+	"deviceId",
+	"userAgent",
+	"lastUserAgent",
+	"sessionId",
+);
 const PAYMENT_ID_KEYS = set(
 	"paymentIntentId",
 	"clientSecret",
@@ -58,12 +86,17 @@ const PAYMENT_ID_KEYS = set(
 	"messageId",
 	"taskName",
 	"eventId",
+	"latestRefundId",
+	"accountId",
+	"objectId",
+	"idempotencyKey",
 );
 const TOKEN_KEY = /(token|secret|password|hash|apikey|otp|recovery|cookie|authorization|signature)/i;
 const FREE_TEXT_KEYS = set(
 	"reason",
 	"rejectReason",
 	"cancellationReason",
+	"suspendedReason",
 	"note",
 	"notes",
 	"comment",
@@ -188,6 +221,7 @@ const walk = (
 	if (EMAIL_KEYS.has(k)) return maskEmailForDemo(value);
 	if (PHONE_KEYS.has(k)) return maskPhone(value);
 	if (STREET_KEYS.has(k)) return MASK;
+	if (PLACE_KEYS.has(k)) return value ? MASK : value;
 	if (NETWORK_KEYS.has(k)) return MASK;
 	if (PAYMENT_ID_KEYS.has(k)) return MASK;
 	if (FREE_TEXT_KEYS.has(k)) return value ? MASK : value;

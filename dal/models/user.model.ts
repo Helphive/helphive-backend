@@ -56,6 +56,15 @@ interface IUser extends Document {
 	state: string;
 	city: string;
 	street: string;
+	/** Set by an admin. A suspended account cannot sign in, refresh, call the API or use the provider socket. */
+	suspended: boolean;
+	suspendedAt?: Date | null;
+	suspendedBy?: mongoose.Types.ObjectId | null;
+	suspendedReason?: string | null;
+	/** Last sign-in or token refresh (about every 10 minutes while an app is open). Absent before it was recorded. */
+	lastActiveAt?: Date | null;
+	/** When currentLocation was last written (websocket or HTTP availability update). */
+	locationUpdatedAt?: Date | null;
 }
 
 // Credentials that must never leave the server. Internal code reads them from the document itself.
@@ -68,11 +77,17 @@ export const USER_SECRET_FIELDS = [
 	"emailVerificationTokens",
 ] as const;
 
+// Admin-only fields: the person never sees who suspended them or the admin's reason.
+export const USER_ADMIN_ONLY_FIELDS = ["suspendedBy", "suspendedReason"] as const;
+
 // Projection for populating or lean-querying users, which bypass the schema transform below.
-export const SAFE_USER_SELECT = USER_SECRET_FIELDS.map((field) => `-${field}`).join(" ");
+export const SAFE_USER_SELECT = [...USER_SECRET_FIELDS, ...USER_ADMIN_ONLY_FIELDS]
+	.map((field) => `-${field}`)
+	.join(" ");
 
 const stripSecrets = (_doc: unknown, ret: Record<string, unknown>) => {
 	for (const field of USER_SECRET_FIELDS) delete ret[field];
+	for (const field of USER_ADMIN_ONLY_FIELDS) delete ret[field];
 	return ret;
 };
 
@@ -155,6 +170,12 @@ const userSchema = new Schema<IUser>(
 		state: { type: String, required: false },
 		city: { type: String, required: false },
 		street: { type: String, required: false },
+		suspended: { type: Boolean, default: false },
+		suspendedAt: { type: Date },
+		suspendedBy: { type: Schema.Types.ObjectId, ref: "Admin" },
+		suspendedReason: { type: String },
+		lastActiveAt: { type: Date },
+		locationUpdatedAt: { type: Date },
 	},
 	{
 		timestamps: true,
@@ -170,6 +191,14 @@ userSchema.index({ "roles.User": 1, createdAt: -1 });
 userSchema.index({ providerApplications: 1 });
 userSchema.index({ "sessions.sessionId": 1 });
 userSchema.index({ isProviderAvailable: 1, providerStatus: 1 });
+// Operations console: suspended accounts, last-active filter and sort, and the search. The search indexes compare
+// case-insensitively (collation strength 2) so a prefix is an index range; queries must pass SEARCH_COLLATION.
+userSchema.index({ suspended: 1, suspendedAt: -1 }, { partialFilterExpression: { suspended: true } });
+userSchema.index({ lastActiveAt: -1 });
+userSchema.index({ email: 1 }, { name: "email_ci", collation: { locale: "en", strength: 2 } });
+userSchema.index({ firstName: 1 }, { name: "firstName_ci", collation: { locale: "en", strength: 2 } });
+userSchema.index({ lastName: 1 }, { name: "lastName_ci", collation: { locale: "en", strength: 2 } });
+userSchema.index({ phone: 1 });
 
 // Middleware to hash password before saving
 userSchema.pre("save", async function (next) {

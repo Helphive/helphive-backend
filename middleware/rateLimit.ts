@@ -389,6 +389,17 @@ export const adminPasswordChangeLimiter = createLimiter({
 	failuresOnly: true,
 });
 
+/** Global search (GET /admin/search), after verifyAdminJWT: per signed-in admin. */
+export const adminSearchLimiter = createLimiter({
+	name: "admin-search",
+	rule: RATE_LIMITS.adminSearchPerAdmin,
+	kind: "local",
+	key: (req) => {
+		const adminId = signedInAdminId(req);
+		return adminId ? `admin-search:${adminId}` : null;
+	},
+});
+
 export const adminRefreshLimiters = [
 	createLimiter({ name: "admin-refresh-ip", rule: RATE_LIMITS.refreshPerIp, kind: "local", key: byIp }),
 	createLimiter({

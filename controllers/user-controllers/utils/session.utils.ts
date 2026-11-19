@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import UserModel from "../../../dal/models/user.model";
 import { getRequestContext, type RequestContext } from "../../../lib/requestContext";
+import { isSuspended } from "../../../lib/suspension";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
 const refreshTokenKey = process.env.REFRESH_TOKEN_SECRET || "";
@@ -52,6 +53,7 @@ export const createSession = async (user: UserDoc) => {
 	const sessionId = new mongoose.Types.ObjectId().toString();
 	const tokens = signTokens(user, sessionId);
 	const now = new Date();
+	user.lastActiveAt = now;
 	user.sessions = [
 		{ sessionId, refreshTokens: [tokens.refreshToken], lastUsedAt: now, createdAt: now, ...sessionDeviceFields() },
 		...[...user.sessions].sort((a, b) => +new Date(b.lastUsedAt) - +new Date(a.lastUsedAt)),
@@ -81,6 +83,8 @@ export const refreshSession = async (presentedToken: string): Promise<RefreshRes
 
 	const user = await UserModel.findOne({ email }).exec();
 	if (!user) return { ok: false, status: 403, message: "User not found." };
+	// Suspension ends every session; this also covers a session re-saved by a sign-in that raced the suspension.
+	if (isSuspended(user)) return { ok: false, status: 403, message: "Session has ended. Please sign in again." };
 
 	let session = user.sessions.find((s) => s.sessionId === sessionId);
 	// Migrate a pre-multi-session login the first time it refreshes.
@@ -114,7 +118,7 @@ export const refreshSession = async (presentedToken: string): Promise<RefreshRes
 					$slice: TOKENS_KEPT_PER_SESSION,
 				},
 			},
-			$set: { "sessions.$.lastUsedAt": new Date(), ...device },
+			$set: { "sessions.$.lastUsedAt": new Date(), lastActiveAt: new Date(), ...device },
 		},
 	).exec();
 	return { ok: true, user, ...tokens };

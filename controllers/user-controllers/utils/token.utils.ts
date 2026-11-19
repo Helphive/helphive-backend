@@ -2,6 +2,7 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import UserModel from "../../../dal/models/user.model";
 import { isSessionActive } from "./session.utils";
+import { isSuspended } from "../../../lib/suspension";
 
 export const JWT_ALGORITHMS: jwt.Algorithm[] = ["HS256"];
 
@@ -15,7 +16,7 @@ export type AccessTokenResult =
 
 /**
  * The single check behind every user-authenticated request and the provider websocket: a valid HS256 access token
- * whose session is still active on the user. Database errors propagate to the caller.
+ * whose session is still active on a user who is not suspended. Database errors propagate to the caller.
  */
 export const verifyAccessToken = async (token: unknown): Promise<AccessTokenResult> => {
 	if (typeof token !== "string" || !token || token.length > 4096) return { ok: false, reason: "invalid" };
@@ -31,7 +32,8 @@ export const verifyAccessToken = async (token: unknown): Promise<AccessTokenResu
 		return { ok: false, reason: "invalid" };
 	}
 	const user = await UserModel.findOne({ email }).exec();
-	if (!user || !isSessionActive(user, sessionId)) return { ok: false, reason: "inactive" };
+	// A suspended account is refused even if a session survived (a sign-in racing the suspension re-saving sessions).
+	if (!user || isSuspended(user) || !isSessionActive(user, sessionId)) return { ok: false, reason: "inactive" };
 	return { ok: true, user, email, sessionId };
 };
 

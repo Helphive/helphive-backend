@@ -47,6 +47,14 @@ export const AUDIT_ACTIONS = {
 	"bookings.resolved_completed": "Marked a stuck in-progress booking completed (the provider's earning is created).",
 	"bookings.resolved_cancelled": "Cancelled a stuck in-progress booking (full refund or none, as chosen).",
 	"payments.refunded": "Refunded a payment in full or in part through Stripe.",
+	"observability.error_status_changed": "Resolved, ignored or reopened an error group.",
+	"observability.alert_rule_created": "Created an alert rule.",
+	"observability.alert_rule_updated": "Changed an alert rule (including turning it on or off).",
+	"observability.alert_rule_deleted": "Deleted an alert rule (kept, marked deleted).",
+	"observability.alert_acknowledged": "Acknowledged a firing alert.",
+	"observability.alert_resolved": "Resolved an alert by hand.",
+	"observability.webhook_replayed": "Replayed a failed Stripe webhook event (fetched again from Stripe).",
+	"observability.task_replayed": "Replayed a failed background task run.",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTIONS;

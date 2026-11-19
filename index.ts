@@ -18,6 +18,7 @@ import log from "./lib/logger";
 import { errorHandler } from "./middleware/errorHandler";
 import { globalLimiter } from "./middleware/rateLimit";
 import { rejectOperatorKeys } from "./middleware/sanitizeInput";
+import { observeRequests } from "./lib/observability/runtime";
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ import authRoute from "./routes/user-routes/auth.route";
 import adminRoute from "./routes/admin.route";
 import emailRoute from "./routes/email.route";
 import webhookRoute from "./routes/webhook-routes/webhook.route";
+import clientErrorsRoute from "./routes/clientErrors.route";
 import { createProviderAvailabilityUpgradeHandler } from "./controllers/user-controllers/provider-websocket";
 
 if (
@@ -99,6 +101,8 @@ app.use(
 );
 // Request id, client details and the access log come first, so every response (even an error) carries X-Request-Id.
 app.use(requestContext);
+// Request metrics and error tracking (lib/observability): counts each response when it finishes; never blocks.
+app.use(observeRequests);
 // Probes: no CORS, rate limit or body parsing, and logged only when they fail.
 // Cloud Run's front end answers /healthz itself (404) and never passes it on, so /livez is the path that works there.
 app.get("/healthz", handleHealthz);
@@ -110,6 +114,8 @@ app.use(globalLimiter);
 app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 
 app.use("/webhook", webhookRoute);
+// Client error reports: own 16 KB body limit and rate limits (routes/clientErrors.route.ts).
+app.use("/client-errors", clientErrorsRoute);
 
 app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());

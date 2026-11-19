@@ -18,7 +18,10 @@ export const PERMISSIONS = {
 	"payments.refund": "Issue refunds.",
 	"payouts.manage": "Retry, hold or release earnings and payouts.",
 	"analytics.read": "Dashboards and the business event stream.",
-	"observability.read": "Request logs, webhook deliveries and task runs.",
+	"observability.read":
+		"Request metrics, errors, logs, webhook deliveries, task runs, dependencies, releases and alerts.",
+	"observability.manage":
+		"Resolve or ignore errors, replay failed webhooks and tasks, manage alert rules and alerts.",
 	"risk.read": "Fraud and risk signals.",
 	"risk.manage": "Act on risk signals (block devices, flag accounts).",
 	"support.read": "Read support cases and customer history.",
@@ -59,6 +62,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
 		"payments.read",
 		"analytics.read",
 		"observability.read",
+		"observability.manage",
 		"risk.read",
 		"risk.manage",
 		"support.read",

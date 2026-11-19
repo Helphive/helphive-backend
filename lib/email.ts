@@ -7,7 +7,7 @@ import { emitEvent } from "./events";
 import { hashEmail, maskEmail } from "./redact";
 import log from "./logger";
 
-export type EmailTemplate = "verify-email" | "reset-password" | "refund" | "audience-contact";
+export type EmailTemplate = "verify-email" | "reset-password" | "refund" | "audience-contact" | "observability-alert";
 
 export type EmailResult =
 	| { status: "sent"; messageId: string | null }

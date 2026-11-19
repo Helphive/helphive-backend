@@ -208,7 +208,11 @@ export const EVENT_CATALOGUE = {
 		description:
 			"An admin write with no business event of its own (notes, ending sessions, resending verification). The audit log has the details.",
 		subjects: ["userId | bookingId | paymentId | applicationId (the target)"],
-		properties: { action: "the audit action name", targetType: "user | booking | payment | application" },
+		properties: {
+			action: "the audit action name",
+			targetType:
+				"user | booking | payment | application, or for observability: error_group | alert_rule | alert | webhook_event | task_run (no subject)",
+		},
 	},
 	"security.demo_account_blocked": {
 		description: "A shared demo account tried an action that is turned off for it.",

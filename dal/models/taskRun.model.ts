@@ -21,6 +21,9 @@ export interface TaskRunDoc {
 	note?: string | null;
 	error?: string | null;
 	requestId?: string | null;
+	/** Set on a run started from the console (observability replay): the run it repeated and who started it. */
+	replayOf?: Types.ObjectId | null;
+	replayedBy?: string | null;
 }
 
 const taskRunSchema = new Schema<TaskRunDoc>(
@@ -39,6 +42,8 @@ const taskRunSchema = new Schema<TaskRunDoc>(
 		note: { type: String, default: null },
 		error: { type: String, default: null },
 		requestId: { type: String, default: null },
+		replayOf: { type: Schema.Types.ObjectId, default: null },
+		replayedBy: { type: String, default: null },
 	},
 	{ versionKey: false, collection: "taskruns" },
 );

@@ -13,6 +13,9 @@ COPY . .
 # Compile TypeScript files
 RUN npm run build
 
+# The running image keeps only what the server needs (no build, test or preview tooling)
+RUN npm prune --omit=dev
+
 # Expose the application port
 EXPOSE 8080
 

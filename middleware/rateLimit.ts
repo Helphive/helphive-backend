@@ -90,7 +90,8 @@ export const globalLimiter = createLimiter({
 	limit: (req) => (bearerEmail(req) ? RATE_LIMITS.globalUser.limit : RATE_LIMITS.globalAnonymous.limit),
 });
 
-// Sign-in (users). Order matters only for which message wins; all three count.
+// Sign-in (users). Both count. There is deliberately no limit keyed on the account alone: it would let anyone who
+// knows an email address keep that account locked out by sending wrong passwords.
 export const loginLimiters = [
 	createLimiter({
 		name: "login-ip",
@@ -104,13 +105,6 @@ export const loginLimiters = [
 		rule: RATE_LIMITS.loginFailuresPerAccountAndIp,
 		kind: "shared",
 		key: (req) => accountAndIpKey(req.body?.email, req.ip),
-		failuresOnly: true,
-	}),
-	createLimiter({
-		name: "login-account",
-		rule: RATE_LIMITS.loginFailuresPerAccount,
-		kind: "shared",
-		key: byBodyEmail,
 		failuresOnly: true,
 	}),
 ];
@@ -200,10 +194,10 @@ export const adminLoginLimiters = [
 		failuresOnly: true,
 	}),
 	createLimiter({
-		name: "admin-login-account",
+		name: "admin-login-account-ip",
 		rule: RATE_LIMITS.adminLoginFailuresPerAccount,
 		kind: "shared",
-		key: byBodyEmail,
+		key: (req) => accountAndIpKey(req.body?.email, req.ip),
 		failuresOnly: true,
 	}),
 ];

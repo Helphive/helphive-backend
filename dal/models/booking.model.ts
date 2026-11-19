@@ -175,6 +175,9 @@ bookingSchema.index({ status: 1, completedAt: -1 });
 bookingSchema.index({ status: 1, cancelledAt: -1 });
 bookingSchema.index({ reference: 1 }, { partialFilterExpression: { reference: { $exists: true } } });
 bookingSchema.index({ address: 1 }, { name: "address_ci", collation: { locale: "en", strength: 2 } });
+// Analytics: acceptances and starts by time (partial: only bookings that have them).
+bookingSchema.index({ acceptedAt: -1 }, { partialFilterExpression: { acceptedAt: { $type: "date" } } });
+bookingSchema.index({ startedAt: -1 }, { partialFilterExpression: { startedAt: { $type: "date" } } });
 
 bookingSchema.pre<Booking>("save", function (next) {
 	if (!this.reference && this._id) this.reference = `HH-${String(this._id).slice(-8).toUpperCase()}`;

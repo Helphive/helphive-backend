@@ -1,3 +1,4 @@
+import { lowerCaseEmail } from "./auth.validators";
 import { body } from "express-validator";
 import { MAX_TEXT_LENGTH, bookingIdInBody, rejectIfInvalid } from "./common.validators";
 
@@ -34,7 +35,12 @@ export const validateRequestProviderAccountFields = [
 		.isLength({ min: 2, max: 50 })
 		.matches(NAME_REGEX)
 		.withMessage("Last name is required, must be 2-50 characters, and valid."),
-	body("email").isEmail().matches(EMAIL_REGEX).withMessage("Invalid email address").isLength({ max: 255 }),
+	body("email")
+		.customSanitizer(lowerCaseEmail)
+		.isEmail()
+		.matches(EMAIL_REGEX)
+		.withMessage("Invalid email address")
+		.isLength({ max: 255 }),
 	requiredText("phone", "Phone number"),
 	requiredText("country", "Country"),
 	requiredText("state", "State"),

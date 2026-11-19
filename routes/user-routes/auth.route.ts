@@ -21,7 +21,7 @@ import {
 	handleGetBookingReceipt,
 } from "../../controllers/user-controllers/auth.controller";
 
-import { createContact, markSignupFlow, sendMagicLinkEmail } from "../../controllers/email.controller";
+import { markSignupFlow, sendMagicLinkEmail } from "../../controllers/email.controller";
 
 import userRoute from "./user.route";
 import providerRoute from "./provider.route";
@@ -64,7 +64,6 @@ authRoute.post(
 	rejectUndeliverableSignup("customer"),
 	handleSignup,
 	markSignupFlow,
-	createContact,
 	sendMagicLinkEmail,
 );
 authRoute.post(
@@ -75,7 +74,6 @@ authRoute.post(
 	rejectUndeliverableSignup("provider"),
 	handleSignupProvider,
 	markSignupFlow,
-	createContact,
 	sendMagicLinkEmail,
 );
 authRoute.post("/login", ...loginLimiters, validateLoginFields, riskListGate("signin"), handleLogin);

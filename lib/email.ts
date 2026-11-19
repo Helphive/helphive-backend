@@ -129,3 +129,26 @@ export const addAudienceContact = async (input: {
 		return { status: "failed", error: error instanceof Error ? error.message : String(error) };
 	}
 };
+
+/**
+ * Adds a person to the audience once their email is verified (never at sign-up, so an address nobody confirmed is
+ * never a contact). Never throws: verifying an email must not depend on Resend.
+ */
+export const addVerifiedContact = async (user: {
+	_id?: unknown;
+	email: string;
+	firstName?: string;
+	lastName?: string;
+}): Promise<void> => {
+	try {
+		const result = await addAudienceContact({
+			email: user.email,
+			firstName: user.firstName,
+			lastName: user.lastName,
+			userId: user._id ? String(user._id) : null,
+		});
+		if (result.status === "failed") log.error("Audience contact could not be added", new Error(result.error));
+	} catch (error) {
+		log.error("Audience contact could not be added", error);
+	}
+};

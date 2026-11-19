@@ -7,7 +7,7 @@ import { CLIENT_BASE_URL, VERIFICATION_EMAIL } from "../config/config";
 import { isDemoAccountEmail } from "../config/demoAccounts";
 import { addEmailToken } from "./user-controllers/utils/token.utils";
 import { findUserByEmail } from "./user-controllers/utils/accountEmail.utils";
-import { addAudienceContact, sendEmail, type EmailResult } from "../lib/email";
+import { sendEmail, type EmailResult } from "../lib/email";
 import { emitEvent } from "../lib/events";
 import log from "../lib/logger";
 
@@ -29,22 +29,6 @@ const emailFromBody = (req: Request): string | null => {
 export const markSignupFlow = (req: Request, res: Response, next: NextFunction) => {
 	res.locals.isSignup = true;
 	next();
-};
-
-/** Adds the new account to the Resend audience. An address the recipient policy blocks is skipped, not added. */
-export const createContact = async (req: Request, res: Response, next: NextFunction) => {
-	const { firstName, lastName, email } = req.body;
-	try {
-		const result = await addAudienceContact({ email, firstName, lastName });
-		if (result.status === "failed") {
-			if (res.locals.isSignup) await UserModel.findOneAndDelete({ email, isEmailVerified: false });
-			throw new Error(result.error);
-		}
-		next();
-	} catch (error) {
-		log.error("Error creating email contact", error);
-		res.status(500).json({ message: "Internal Server Error" });
-	}
 };
 
 /**

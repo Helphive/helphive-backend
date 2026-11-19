@@ -19,6 +19,7 @@ import { JWT_ALGORITHMS, isPendingEmailToken } from "./utils/token.utils";
 import { createCometChatUser, updateCometChatUser } from "./utils/cometchat.util";
 import { emailTakenBody, findSignupConflict, findUserByEmail, isDuplicateKeyError } from "./utils/accountEmail.utils";
 import { normaliseEmail } from "../../lib/emailAddress";
+import { addVerifiedContact } from "../../lib/email";
 import { DEMO_ACCOUNT_BLOCKED_MESSAGE, isDemoAccountEmail } from "../../config/demoAccounts";
 import { publicValidationErrors } from "../../middleware/sanitizeInput";
 import { storedFileInfo } from "../../middleware/uploads";
@@ -363,6 +364,8 @@ export const handleVerifyEmail = async (req: Request, res: Response) => {
 			},
 			req,
 		);
+		// The audience only ever holds addresses their owner has confirmed.
+		await addVerifiedContact(user);
 
 		res.status(200).json({ message: "Email verified successfully" });
 	} catch (error) {

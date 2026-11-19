@@ -85,7 +85,10 @@ export const DEPENDENCIES: { name: string; label: string; enabled: () => boolean
 		probe: async () => {
 			await axios.get(`${COMET_CHAT_BASE_URL}/users`, {
 				params: { perPage: 1 },
-				headers: { apiKey: process.env.COMET_CHAT_REST_API_KEY, accept: "application/json" },
+				headers: {
+					apiKey: process.env.COMETCHAT_REST_API_KEY || process.env.COMET_CHAT_REST_API_KEY,
+					accept: "application/json",
+				},
 				timeout: TIMEOUT_MS,
 			});
 		},
@@ -132,7 +135,10 @@ export const DEPENDENCIES: { name: string; label: string; enabled: () => boolean
 		enabled: () => configured("GOOGLE_MAPS_API_KEY"),
 		probe: async () => {
 			const { data } = await axios.get("https://maps.googleapis.com/maps/api/geocode/json", {
-				params: { address: "London", key: process.env.GOOGLE_MAPS_API_KEY },
+				params: {
+					address: "London",
+					key: process.env.GOOGLE_MAPS_SERVER_API_KEY || process.env.GOOGLE_MAPS_API_KEY,
+				},
 				timeout: TIMEOUT_MS,
 			});
 			if (data?.status && !["OK", "ZERO_RESULTS"].includes(data.status)) {

@@ -157,7 +157,7 @@ export const globalLimiter = createLimiter({
 	kind: "local",
 	// Webhooks are limited separately; health probes are never limited.
 	key: (req) =>
-		req.path.startsWith("/webhook/") || req.path === "/healthz" || req.path === "/readyz"
+		req.path.startsWith("/webhook/") || req.path === "/healthz" || req.path === "/livez" || req.path === "/readyz"
 			? null
 			: userOrIpKey(bearerEmail(req), req.ip),
 	limit: (req) => (bearerEmail(req) ? RATE_LIMITS.globalUser.limit : RATE_LIMITS.globalAnonymous.limit),

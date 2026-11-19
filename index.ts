@@ -100,7 +100,9 @@ app.use(
 // Request id, client details and the access log come first, so every response (even an error) carries X-Request-Id.
 app.use(requestContext);
 // Probes: no CORS, rate limit or body parsing, and logged only when they fail.
+// Cloud Run's front end answers /healthz itself (404) and never passes it on, so /livez is the path that works there.
 app.get("/healthz", handleHealthz);
+app.get("/livez", handleHealthz);
 app.get("/readyz", handleReadyz);
 app.use(credentials);
 app.use(cors(corsOptions));

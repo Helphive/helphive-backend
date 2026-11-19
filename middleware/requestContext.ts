@@ -4,7 +4,7 @@ import { buildRequestContext, runWithContext } from "../lib/requestContext";
 import { buildRequestLogEntry, writeEntry } from "../lib/logger";
 
 // Health probes are frequent and uninteresting; they are logged only when they fail.
-export const QUIET_PATHS = new Set(["/healthz", "/readyz"]);
+export const QUIET_PATHS = new Set(["/healthz", "/livez", "/readyz"]);
 
 const projectId = () => process.env.GOOGLE_CLOUD_PROJECT || GOOGLE_CLOUD_PROJECT_ID;
 

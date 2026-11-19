@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from "express";
-import { Resend } from "resend";
 import jwt from "jsonwebtoken";
 import NotionMagicLinkEmail from "../emails/verificationEmail";
 import NotionResetPasswordEmail from "../emails/resetPasswordEmail";
@@ -7,9 +6,10 @@ import UserModel from "../dal/models/user.model";
 import { CLIENT_BASE_URL, VERIFICATION_EMAIL } from "../config/config";
 import { isDemoAccountEmail } from "../config/demoAccounts";
 import { addEmailToken } from "./user-controllers/utils/token.utils";
+import { addAudienceContact, sendEmail } from "../lib/email";
+import { emitEvent } from "../lib/events";
+import log from "../lib/logger";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-const resendAudienceId = process.env.RESEND_AUDIENCE_ID || "";
 const verificationEmail = VERIFICATION_EMAIL;
 
 const VERIFY_EMAIL_TOKEN_TTL = "1d";
@@ -30,27 +30,26 @@ export const markSignupFlow = (req: Request, res: Response, next: NextFunction) 
 	next();
 };
 
+/** Adds the new account to the Resend audience. An address the recipient policy blocks is skipped, not added. */
 export const createContact = async (req: Request, res: Response, next: NextFunction) => {
 	const { firstName, lastName, email } = req.body;
 	try {
-		const response = await resend.contacts.create({
-			email: email,
-			firstName: firstName,
-			lastName: lastName,
-			unsubscribed: false,
-			audienceId: resendAudienceId,
-		});
-		if (response.error) {
+		const result = await addAudienceContact({ email, firstName, lastName });
+		if (result.status === "failed") {
 			if (res.locals.isSignup) await UserModel.findOneAndDelete({ email, isEmailVerified: false });
-			throw new Error(`${response.error.message ?? response.error}`);
+			throw new Error(result.error);
 		}
 		next();
 	} catch (error) {
-		console.error("Error creating email contact:", error);
+		log.error("Error creating email contact", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
 
+/**
+ * Sends (or resends) the verification link. For an address the recipient policy blocks, the answer is the same as for
+ * any other address but nothing is sent, so the response reveals nothing about the policy.
+ */
 export const sendMagicLinkEmail = async (req: Request, res: Response) => {
 	const email = emailFromBody(req);
 	if (!email) {
@@ -71,19 +70,21 @@ export const sendMagicLinkEmail = async (req: Request, res: Response) => {
 		user.emailVerificationTokens = addEmailToken(user.emailVerificationTokens, token);
 		await user.save();
 
-		const { error } = await resend.emails.send({
+		const result = await sendEmail({
+			template: "verify-email",
 			from: `Helphive <${verificationEmail}>`,
-			to: [user.email],
+			to: user.email,
 			subject: "Verify Your Email",
 			react: NotionMagicLinkEmail({ loginCode: verificationLink, verificationLink }),
+			userId: String(user._id),
 		});
-		if (error) {
+		if (result.status === "failed") {
 			if (res.locals.isSignup) await UserModel.findOneAndDelete({ _id: user._id, isEmailVerified: false });
-			throw new Error(`${error.message ?? error}`);
+			throw new Error(result.error);
 		}
 		res.status(201).json({ message: "Verification email sent" });
 	} catch (error) {
-		console.error("Error sending verification email:", error);
+		log.error("Error sending verification email", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -95,6 +96,7 @@ export const sendResetPasswordEmail = async (req: Request, res: Response) => {
 	}
 	// Same success response as a real request, but no token is stored and no email goes out.
 	if (isDemoAccountEmail(email)) {
+		emitEvent({ type: "security.demo_account_blocked", properties: { action: "password_reset_request" } }, req);
 		return res.status(201).json({ message: "Verification email sent" });
 	}
 	try {
@@ -109,18 +111,29 @@ export const sendResetPasswordEmail = async (req: Request, res: Response) => {
 		user.resetPasswordTokens = addEmailToken(user.resetPasswordTokens, token);
 		await user.save();
 
-		const { error } = await resend.emails.send({
+		// A blocked address gets the same answer as any other, with nothing sent (see sendMagicLinkEmail).
+		const result = await sendEmail({
+			template: "reset-password",
 			from: `Helphive <${verificationEmail}>`,
-			to: [user.email],
+			to: user.email,
 			subject: "Reset Your Password",
 			react: NotionResetPasswordEmail({ loginCode: verificationLink, verificationLink }),
+			userId: String(user._id),
 		});
-		if (error) {
-			throw new Error(`${error.message ?? error}`);
+		if (result.status === "failed") {
+			throw new Error(result.error);
 		}
+		emitEvent(
+			{
+				type: "auth.password_reset_requested",
+				subjects: { userId: user._id },
+				properties: { emailSent: result.status === "sent" },
+			},
+			req,
+		);
 		res.status(201).json({ message: "Verification email sent" });
 	} catch (error) {
-		console.error("Error sending password reset email:", error);
+		log.error("Error sending password reset email", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };

@@ -5,6 +5,8 @@ import PaymentModel from "../../../dal/models/payment.model";
 import { describeBooking } from "./booking.utils";
 import { hasRefund } from "./payment.utils";
 import { GOOGLE_CLOUD_TASKS_QUEUE_PATH, SERVER_BASE_URL } from "../../../config/config";
+import { emitEvent } from "../../../lib/events";
+import log from "../../../lib/logger";
 
 /**
  * Refunds a booking's payment in full when it was paid and not refunded yet. Used by cancellation and expiry; the
@@ -15,7 +17,7 @@ export const refundPaymentIfPaid = async (bookingId: string) => {
 	if (!payment || !payment.paymentIntentId || payment.status !== "completed" || hasRefund(payment)) return;
 	const paymentIntent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
 	if (paymentIntent.status !== "succeeded") {
-		console.log(`Payment intent ${payment.paymentIntentId} was not paid, no refund needed.`);
+		log.info(`Payment intent ${payment.paymentIntentId} was not paid, no refund needed.`);
 		return;
 	}
 	const refund = await stripe.refunds.create(
@@ -28,6 +30,12 @@ export const refundPaymentIfPaid = async (bookingId: string) => {
 	payment.refundCreated = new Date(refund.created * 1000);
 	payment.destinationDetails = { type: refund.destination_details?.type };
 	await payment.save();
+	emitEvent({
+		type: "refund.created",
+		actor: { type: "system" },
+		subjects: { bookingId: payment.bookingId, paymentId: payment._id },
+		properties: { amount: payment.refundAmount },
+	});
 };
 
 export const sendBookingCompletedNotification = async (userId: string, providerId: string, booking: any) => {
@@ -58,7 +66,7 @@ export const sendBookingCompletedNotification = async (userId: string, providerI
 			await storeNotification(title, message, id, screen, "booking_completed", bookingId);
 		}
 	} catch (error: any) {
-		console.error(`Error sending booking completed notification for booking ID ${bookingId}:`, error.response);
+		log.error(`Error sending booking completed notification for booking ID ${bookingId}`, error.response);
 	}
 };
 
@@ -92,7 +100,7 @@ export const sendBookingCancelledNotification = async (userId: string, providerI
 			await storeNotification(title, message, id, screen, "booking_cancelled", bookingId);
 		}
 	} catch (error: any) {
-		console.error(`Error sending booking cancellation notification for booking ID ${bookingId}:`, error.response);
+		log.error(`Error sending booking cancellation notification for booking ID ${bookingId}`, error.response);
 	}
 };
 

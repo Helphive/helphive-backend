@@ -13,6 +13,9 @@ interface IPayout extends Document {
 		country?: string;
 		currency?: string;
 	};
+	/** When Stripe reported it paid, or failed/cancelled (absent on older payouts). */
+	paidAt?: Date | null;
+	failedAt?: Date | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -34,11 +37,17 @@ const payoutSchema = new Schema<IPayout>(
 			country: { type: String },
 			currency: { type: String },
 		},
+		paidAt: { type: Date },
+		failedAt: { type: Date },
 	},
 	{
 		timestamps: true,
 	},
 );
+
+payoutSchema.index({ userId: 1, createdAt: -1 });
+payoutSchema.index({ status: 1, createdAt: -1 });
+payoutSchema.index({ createdAt: -1 });
 
 const PayoutModel: Model<IPayout> = mongoose.model<IPayout>("Payout", payoutSchema);
 

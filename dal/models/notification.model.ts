@@ -74,6 +74,9 @@ const NotificationSchema = new Schema<INotification>(
 
 NotificationSchema.index({ userId: 1, _id: -1 });
 NotificationSchema.index({ userId: 1, read: 1 });
+NotificationSchema.index({ read: 1, createdAt: -1 });
+NotificationSchema.index({ type: 1, createdAt: -1 });
+NotificationSchema.index({ createdAt: -1 });
 
 const NotificationModel = model<INotification>("Notification", NotificationSchema);
 

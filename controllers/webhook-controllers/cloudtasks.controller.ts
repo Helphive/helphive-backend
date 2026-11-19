@@ -8,6 +8,8 @@ import { sendNotification, storeNotification } from "../service-accounts/onesign
 import { EXPIRED_CANCELLATION_REASON } from "../user-controllers/utils/booking.utils";
 import { describeBooking, formatMoney, isValidObjectId } from "../user-controllers/utils/booking.utils";
 import { refundPaymentIfPaid } from "../user-controllers/utils/auth.utils";
+import { emitEvent } from "../../lib/events";
+import log from "../../lib/logger";
 
 export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: Response) => {
 	try {
@@ -75,6 +77,15 @@ export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: R
 		}
 
 		await UserModel.updateOne({ _id: provider._id }, { $inc: { availableBalance: earning.amount } });
+		emitEvent({
+			type: "earning.released",
+			actor: { type: "system" },
+			subjects: { providerId: provider._id, bookingId: booking._id, earningId: earning._id },
+			properties: {
+				amount: earning.amount,
+				waitedMs: (completed.completionDate?.getTime() ?? Date.now()) - new Date(earning.date).getTime(),
+			},
+		});
 
 		await sendPaymentNotification(String(provider._id), earning.amount, booking);
 
@@ -83,7 +94,7 @@ export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: R
 			transferId: transfer.id,
 		});
 	} catch (error: any) {
-		console.error("Error processing earning payout: ", error);
+		log.error("Error processing earning payout", error);
 
 		if (error.type === "StripeCardError") {
 			return res.status(400).json({ message: error.message });
@@ -106,7 +117,7 @@ const sendPaymentNotification = async (providerId: string, amount: number, booki
 		});
 		await storeNotification(title, message, providerId, "Earnings", "payment_succeeded", bookingId);
 	} catch (error) {
-		console.error(`Error sending payment notification for booking ID ${bookingId}: `, error);
+		log.error(`Error sending payment notification for booking ID ${bookingId}`, error);
 	}
 };
 
@@ -139,6 +150,11 @@ export const handleGoogleCloudTasksBookingExpired = async (req: Request, res: Re
 		if (!booking) {
 			return res.status(200).json({ message: "Booking is not pending" });
 		}
+		emitEvent({
+			type: "booking.expired",
+			actor: { type: "system" },
+			subjects: { userId: booking.userId, bookingId: booking._id },
+		});
 
 		await sendBookingExpiredNotification(booking.userId.toString(), booking);
 
@@ -146,7 +162,7 @@ export const handleGoogleCloudTasksBookingExpired = async (req: Request, res: Re
 
 		return res.status(200).json({ message: "Booking expired" });
 	} catch (error) {
-		console.error("Error expiring booking: ", error);
+		log.error("Error expiring booking", error);
 		return res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -164,6 +180,6 @@ const sendBookingExpiredNotification = async (userId: string, booking: any) => {
 		});
 		await storeNotification(title, message, userId, "BookingDetails", "booking_expired", bookingId);
 	} catch (error) {
-		console.error(`Error sending booking expired notification for booking ID ${bookingId}: `, error);
+		log.error(`Error sending booking expired notification for booking ID ${bookingId}`, error);
 	}
 };

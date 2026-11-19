@@ -25,6 +25,9 @@ import { DEMO_ACCOUNT_BLOCKED_MESSAGE, isDemoAccountEmail } from "../../config/d
 import { publicValidationErrors } from "../../middleware/sanitizeInput";
 import { storedFileInfo } from "../../middleware/uploads";
 import { recordSuccessfulSignIn } from "../../middleware/rateLimit";
+import { emitEvent, userActorType } from "../../lib/events";
+import { hashEmail } from "../../lib/redact";
+import log from "../../lib/logger";
 
 const emailVerificationSecret = process.env.EMAIL_VERIFICATION_SECRET || "";
 const ONE_SIGNAL_APP_ID = process.env.ONE_SIGNAL_APP_ID || "";
@@ -77,12 +80,21 @@ export const handleSignup = async (req: Request, res: Response, next: NextFuncti
 			},
 		});
 		await newUser.save();
+		emitEvent(
+			{
+				type: "user.signed_up",
+				actor: { type: "user", id: newUser._id },
+				subjects: { userId: newUser._id },
+				properties: { role: "customer" },
+			},
+			req,
+		);
 
 		await createCometChatUser(String(newUser._id), email, `${firstName} ${lastName}`);
 
 		next();
 	} catch (error) {
-		console.error("Error signing up:", error);
+		log.error("Error signing up", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -121,12 +133,21 @@ export const handleSignupProvider = async (req: Request, res: Response, next: Ne
 			},
 		});
 		await newUser.save();
+		emitEvent(
+			{
+				type: "user.signed_up",
+				actor: { type: "provider", id: newUser._id },
+				subjects: { userId: newUser._id, providerId: newUser._id },
+				properties: { role: "provider" },
+			},
+			req,
+		);
 
 		await createCometChatUser(String(newUser._id), email, `${firstName} ${lastName}`);
 
 		next();
 	} catch (error) {
-		console.error("Error signing up:", error);
+		log.error("Error signing up", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -146,8 +167,18 @@ export const handleLogin = async (req: Request, res: Response) => {
 		// The same answer, after the same bcrypt work, whether or not the account exists.
 		const user = await UserModel.findOne({ email });
 		const passwordMatch = await bcrypt.compare(password, user?.password ?? DUMMY_PASSWORD_HASH);
+		const role = user?.roles?.Provider ? "provider" : "customer";
 		if (user && passwordMatch) {
 			if (!user.isEmailVerified) {
+				emitEvent(
+					{
+						type: "auth.sign_in_failed",
+						actor: { type: "anonymous" },
+						subjects: { userId: user._id },
+						properties: { reason: "email_unverified", emailHash: hashEmail(String(email)) },
+					},
+					req,
+				);
 				return res.status(403).json({ message: "Email is not verified." });
 			}
 
@@ -155,15 +186,33 @@ export const handleLogin = async (req: Request, res: Response) => {
 			const { accessToken, refreshToken: newRefreshToken } = await createSession(user);
 			// This address may now sign in to this account even while the per-account failure cap is exceeded.
 			recordSuccessfulSignIn("user", req);
+			emitEvent(
+				{
+					type: "auth.sign_in_succeeded",
+					actor: { type: userActorType(user), id: user._id },
+					subjects: { userId: user._id, ...(user.roles?.Provider ? { providerId: user._id } : {}) },
+					properties: { role },
+				},
+				req,
+			);
 
 			await handleOneSignalSetup(user);
 
 			return res.json({ user: toPublicUser(user), accessToken, refreshToken: newRefreshToken });
 		} else {
+			emitEvent(
+				{
+					type: "auth.sign_in_failed",
+					actor: { type: "anonymous" },
+					subjects: { userId: user?._id },
+					properties: { reason: "bad_credentials", emailHash: hashEmail(String(email)) },
+				},
+				req,
+			);
 			return res.status(401).json({ message: LOGIN_FAILED_MESSAGE });
 		}
 	} catch (error) {
-		console.error("Error logging in:", error);
+		log.error("Error logging in", error);
 		return res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -183,7 +232,7 @@ export const handleRefreshToken = async (req: Request, res: Response) => {
 			refreshToken: result.refreshToken,
 		});
 	} catch (error) {
-		console.error("Error refreshing session:", error);
+		log.error("Error refreshing session", error);
 		res.status(500).json({ message: "Internal server error!" });
 	}
 };
@@ -192,10 +241,20 @@ export const handleLogout = async (req: Request, res: Response) => {
 	try {
 		const { refreshToken } = req.body;
 		if (!refreshToken || typeof refreshToken !== "string") return res.sendStatus(204);
-		await endSession(refreshToken);
+		const user = await endSession(refreshToken);
+		if (user) {
+			emitEvent(
+				{
+					type: "auth.signed_out",
+					actor: { type: userActorType(user), id: user._id },
+					subjects: { userId: user._id },
+				},
+				req,
+			);
+		}
 		res.sendStatus(204);
 	} catch (error) {
-		console.error("Error during logout:", error);
+		log.error("Error during logout", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -248,7 +307,7 @@ export const handleGetUserInfo = async (req: Request, res: Response) => {
 			return res.status(404).json({ message: "User not found" });
 		}
 	} catch (error) {
-		console.error("Error fetching user details:", error);
+		log.error("Error fetching user details", error);
 		return res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -279,6 +338,14 @@ export const handleVerifyEmail = async (req: Request, res: Response) => {
 		user.isEmailVerified = true;
 		user.emailVerificationTokens = [];
 		await user.save();
+		emitEvent(
+			{
+				type: "user.email_verified",
+				actor: { type: userActorType(user), id: user._id },
+				subjects: { userId: user._id },
+			},
+			req,
+		);
 
 		res.status(200).json({ message: "Email verified successfully" });
 	} catch (error) {
@@ -287,7 +354,7 @@ export const handleVerifyEmail = async (req: Request, res: Response) => {
 		} else if (error instanceof jwt.JsonWebTokenError) {
 			return res.status(400).json({ message: "Invalid token" });
 		}
-		console.error("Error verifying email:", error);
+		log.error("Error verifying email", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -309,6 +376,14 @@ export const handleResetPassword = async (req: Request, res: Response) => {
 		}
 
 		if (isDemoAccountEmail(user.email)) {
+			emitEvent(
+				{
+					type: "security.demo_account_blocked",
+					subjects: { userId: user._id },
+					properties: { action: "password_reset" },
+				},
+				req,
+			);
 			return res.status(403).json({ message: DEMO_ACCOUNT_BLOCKED_MESSAGE });
 		}
 
@@ -330,6 +405,14 @@ export const handleResetPassword = async (req: Request, res: Response) => {
 		// Whoever knew the old password is signed out everywhere.
 		endAllSessions(user);
 		await user.save();
+		emitEvent(
+			{
+				type: "auth.password_reset_completed",
+				actor: { type: userActorType(user), id: user._id },
+				subjects: { userId: user._id },
+			},
+			req,
+		);
 
 		res.status(200).json({ message: "Password reset successfully" });
 	} catch (error) {
@@ -338,7 +421,7 @@ export const handleResetPassword = async (req: Request, res: Response) => {
 		} else if (error instanceof jwt.JsonWebTokenError) {
 			return res.status(400).json({ message: "Invalid token" });
 		}
-		console.error("Error resetting password:", error);
+		log.error("Error resetting password", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -346,10 +429,10 @@ export const handleResetPassword = async (req: Request, res: Response) => {
 export const handleOneSignalSetup = async (user: any) => {
 	try {
 		await oneSignalApi.delete(`/apps/${ONE_SIGNAL_APP_ID}/users/by/external_id/${user._id}/identity/external_id`);
-		console.log("Deleted OneSignal user with external ID:", user._id);
+		log.info(`Deleted OneSignal user with external ID ${user._id}`);
 	} catch (error: any) {
 		if (error.response && error.response.status !== 404) {
-			console.error("Error setting up OneSignal:", error);
+			log.error("Error setting up OneSignal", error);
 		}
 	}
 };
@@ -399,6 +482,7 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 		}
 
 		let earning: InstanceType<typeof EarningModel> | null = null;
+		let releaseAt: Date;
 		try {
 			earning = await EarningModel.create({
 				bookingId: booking._id,
@@ -406,7 +490,7 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 				date: new Date(),
 			});
 			// REQUIRES ATTENTION: earnings are released 30 seconds after completion (meant to be several days).
-			const releaseAt = new Date(Date.now() + 30 * 1000);
+			releaseAt = new Date(Date.now() + 30 * 1000);
 			await createGoogleCloudTaskPaymentTrigger(String(booking._id), releaseAt);
 		} catch (error) {
 			// Without its release task the earning would never be paid; put the booking back so it can be retried.
@@ -418,11 +502,38 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 			throw error;
 		}
 
+		const subjects = { userId: booking.userId, providerId: booking.providerId, bookingId: booking._id };
+		const completedBy = requesterId === booking.userId.toString() ? "customer" : "provider";
+		emitEvent(
+			{
+				type: "booking.completed",
+				actor: { type: completedBy === "customer" ? "user" : "provider", id: user._id },
+				subjects,
+				properties: {
+					by: completedBy,
+					durationMs: completed.startedAt
+						? completed.completedAt.getTime() - completed.startedAt.getTime()
+						: null,
+					bookedHours: completed.hours,
+				},
+			},
+			req,
+		);
+		emitEvent(
+			{
+				type: "earning.created",
+				actor: { type: "system" },
+				subjects: { ...subjects, earningId: earning._id },
+				properties: { amount: earning.amount, releaseAt },
+			},
+			req,
+		);
+
 		await sendBookingCompletedNotification(booking.userId.toString(), booking.providerId.toString(), completed);
 
 		res.status(200).json({ message: "Booking has been completed." });
 	} catch (error) {
-		console.error("Error completing job:", error);
+		log.error("Error completing job", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -468,6 +579,21 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 			return res.status(400).json(notPending);
 		}
 
+		const cancelledBy = requesterId === booking.userId.toString() ? "customer" : "provider";
+		emitEvent(
+			{
+				type: "booking.cancelled",
+				actor: { type: cancelledBy === "customer" ? "user" : "provider", id: user._id },
+				subjects: { userId: cancelled.userId, providerId: cancelled.providerId, bookingId: cancelled._id },
+				properties: {
+					by: cancelledBy,
+					reason: cancelled.cancellationReason ?? null,
+					wasAccepted: !!cancelled.providerId,
+				},
+			},
+			req,
+		);
+
 		await sendBookingCancelledNotification(
 			cancelled.userId.toString(),
 			cancelled.providerId ? cancelled.providerId.toString() : "",
@@ -478,7 +604,7 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 
 		res.status(200).json({ message: "Booking has been cancelled." });
 	} catch (error) {
-		console.error("Error cancelling booking:", error);
+		log.error("Error cancelling booking", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -498,6 +624,10 @@ export const handleUpdateProfile = async (req: Request, res: Response) => {
 		}
 
 		const { firstName, lastName, phone, street, country, state, city } = req.body;
+		const changedFields = Object.entries({ firstName, lastName, phone, street, country, state, city })
+			.filter(([, value]) => !!value)
+			.map(([field]) => field);
+		let photo = false;
 
 		if (firstName) user.firstName = firstName;
 		if (lastName) user.lastName = lastName;
@@ -526,18 +656,28 @@ export const handleUpdateProfile = async (req: Request, res: Response) => {
 					.file(destinationPath)
 					.save(profileFile.buffer, { contentType, resumable: false });
 				user.profile = destinationPath;
+				photo = true;
 				await updateCometChatUser(userId, destinationPath);
 			} catch (error) {
-				console.error(`Error uploading profile image to ${destinationPath}:`, error);
+				log.error(`Error uploading profile image to ${destinationPath}:`, error);
 				throw error;
 			}
 		}
 
 		await user.save();
+		emitEvent(
+			{
+				type: "user.profile_updated",
+				actor: { type: userActorType(user), id: user._id },
+				subjects: { userId: user._id },
+				properties: { fields: changedFields, photo },
+			},
+			req,
+		);
 
 		res.status(200).json({ message: "Profile updated successfully." });
 	} catch (error) {
-		console.error("Error updating profile:", error);
+		log.error("Error updating profile", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -606,7 +746,7 @@ export const handleGetNotifications = async (req: Request, res: Response) => {
 			unreadCount,
 		});
 	} catch (error) {
-		console.error("Error fetching notifications:", error);
+		log.error("Error fetching notifications", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -622,7 +762,7 @@ export const handleGetUnreadNotificationCount = async (req: Request, res: Respon
 		const unreadCount = await NotificationModel.countDocuments({ userId: String(user._id), read: false });
 		res.status(200).json({ unreadCount });
 	} catch (error) {
-		console.error("Error fetching unread notification count:", error);
+		log.error("Error fetching unread notification count", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -636,7 +776,7 @@ export const handleMarkAllNotificationsAsRead = async (req: Request, res: Respon
 		const result = await NotificationModel.updateMany({ userId: String(user._id), read: false }, { read: true });
 		res.status(200).json({ modifiedCount: result.modifiedCount });
 	} catch (error) {
-		console.error("Error marking all notifications as read:", error);
+		log.error("Error marking all notifications as read", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -661,7 +801,7 @@ export const handleDeleteNotification = async (req: Request, res: Response) => {
 		await notification.deleteOne();
 		res.status(200).json({ message: "Notification deleted." });
 	} catch (error) {
-		console.error("Error deleting notification:", error);
+		log.error("Error deleting notification", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -741,7 +881,7 @@ export const handleGetBookingReceipt = async (req: Request, res: Response) => {
 			},
 		});
 	} catch (error) {
-		console.error("Error getting booking receipt:", error);
+		log.error("Error getting booking receipt", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -781,7 +921,7 @@ export const handleMarkNotificationAsRead = async (req: Request, res: Response) 
 			message: "Notification marked as read.",
 		});
 	} catch (error) {
-		console.error("Error marking notification as read:", error);
+		log.error("Error marking notification as read", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});

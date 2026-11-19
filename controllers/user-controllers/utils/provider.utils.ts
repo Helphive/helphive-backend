@@ -2,6 +2,7 @@ import stripe from "../../service-accounts/stripe";
 import { sendNotification, storeNotification } from "../../service-accounts/onesignal";
 import { describeBooking } from "./booking.utils";
 import { CLIENT_BASE_URL } from "../../../config/config";
+import log from "../../../lib/logger";
 
 export const sendBookingStartedNotification = async (userId: string, booking: any) => {
 	const bookingId = booking._id.toString();
@@ -17,7 +18,7 @@ export const sendBookingStartedNotification = async (userId: string, booking: an
 		});
 		await storeNotification(title, message, userId, "BookingDetails", "booking_start_requested", bookingId);
 	} catch (error: any) {
-		console.error(`Error sending booking start request notification for booking ID ${bookingId}:`, error.response);
+		log.error(`Error sending booking start request notification for booking ID ${bookingId}`, error);
 	}
 };
 
@@ -35,7 +36,7 @@ export const sendBookingAcceptedNotification = async (userId: string, providerNa
 		});
 		await storeNotification(title, message, userId, "BookingDetails", "booking_accepted", bookingId);
 	} catch (error: any) {
-		console.error(`Error sending booking accepted notification for booking ID ${bookingId}:`, error.response);
+		log.error(`Error sending booking accepted notification for booking ID ${bookingId}`, error);
 	}
 };
 

@@ -1,8 +1,8 @@
 import { body } from "express-validator";
 import { MAX_TEXT_LENGTH } from "./common.validators";
 
-const NAME_REGEX = /^[a-zA-Z\xC0-\uFFFF]+([ \-']{0,1}[a-zA-Z\xC0-\uFFFF]+){0,2}[.]{0,1}$/;
-const EMAIL_REGEX =
+export const NAME_REGEX = /^[a-zA-Z\xC0-\uFFFF]+([ \-']{0,1}[a-zA-Z\xC0-\uFFFF]+){0,2}[.]{0,1}$/;
+export const EMAIL_REGEX =
 	/(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9]))\.){3}(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9])|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])/;
 
 export const validateLoginFields = [
@@ -36,6 +36,24 @@ export const validateSignupFields = [
 		.matches(/[^A-Za-z0-9]/)
 		.withMessage("Password must contain at least one special character"),
 ];
+
+/** The password policy for users, also used for admin passwords. */
+export const strongPassword = (field: string) =>
+	body(field)
+		.isString()
+		.withMessage("Password must be text.")
+		.isLength({ min: 8, max: 255 })
+		.withMessage(
+			"Password must be at least 8 characters long, and contain at least one lowercase letter, one uppercase letter, one number, and one special character",
+		)
+		.matches(/[a-z]/)
+		.withMessage("Password must contain at least one lowercase letter")
+		.matches(/[A-Z]/)
+		.withMessage("Password must contain at least one uppercase letter")
+		.matches(/[0-9]/)
+		.withMessage("Password must contain at least one number")
+		.matches(/[^A-Za-z0-9]/)
+		.withMessage("Password must contain at least one special character");
 
 export const validateResetPasswordFields = [
 	body("token").isString().notEmpty().isLength({ max: 2048 }).withMessage("Token is required"),

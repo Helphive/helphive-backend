@@ -1,5 +1,7 @@
+import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
 import path from "path";
+import { runWithContext } from "../lib/requestContext";
 
 // Cloud Run caps an HTTP/1 request at 32 MiB, so this is the most a single file can usefully be.
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
@@ -62,8 +64,19 @@ export class UploadRejectedError extends Error {
 	status = 400;
 }
 
-/** Memory upload of the named fields, one file each, with size, count and type limits. */
-export const uploadFields = (fields: string[]) =>
+/**
+ * Memory upload of the named fields, one file each, with size, count and type limits. Multer continues from a stream
+ * callback, so the request context is re-entered for the handlers after it.
+ */
+export const uploadFields = (fields: string[]) => {
+	const upload = multerFields(fields);
+	return (req: Request, res: Response, next: NextFunction) =>
+		upload(req, res, (error?: unknown) =>
+			req.context ? runWithContext(req.context, () => next(error)) : next(error),
+		);
+};
+
+const multerFields = (fields: string[]) =>
 	multer({
 		storage: multer.memoryStorage(),
 		limits: { fileSize: MAX_UPLOAD_BYTES, files: fields.length, fields: 30, fieldSize: 64 * 1024, parts: 40 },

@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken } from "../controllers/user-controllers/utils/token.utils";
+import { setActor } from "../lib/requestContext";
+import log from "../lib/logger";
 
 declare module "express" {
 	interface Request {
@@ -20,9 +22,10 @@ export const verifyJWT = async (req: Request, res: Response, next: NextFunction)
 		req.user = result.email;
 		req.roles = result.user.roles;
 		req.providerStatus = result.user.providerStatus;
+		setActor(result.user.roles?.Provider ? "provider" : "user", String(result.user._id), req.context);
 		next();
 	} catch (err) {
-		console.error("Error verifying token:", err);
+		log.error("Error verifying token", err);
 		return res.status(500).send({ error: "Internal Server Error" });
 	}
 };

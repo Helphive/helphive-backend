@@ -10,19 +10,25 @@ import ProviderApplicationModel from "../dal/models/providerapplication.model";
 import UserModel from "../dal/models/user.model";
 import { sendNotification, storeNotification } from "./service-accounts/onesignal";
 import path from "path";
-import { isActiveAdmin, signAdminToken } from "../middleware/verifyAdminJWT";
 import { publicValidationErrors } from "../middleware/sanitizeInput";
-import { recordSuccessfulSignIn } from "../middleware/rateLimit";
+import { hasPermission, isDemoAdmin, legacyFlagsFor } from "../config/adminPermissions";
+import { adminActor, recordAudit } from "../lib/audit";
+import { emitEvent } from "../lib/events";
+import log from "../lib/logger";
+import { ADMIN_BCRYPT_ROUNDS } from "./admin/auth.controller";
 
-const ADMIN_BCRYPT_ROUNDS = 12;
-const DUMMY_ADMIN_HASH = bcrypt.hashSync("helphive-dummy-admin-password", ADMIN_BCRYPT_ROUNDS);
 // Signed links to provider documents (ID, DBS check, CV) stay valid this long after the list is loaded.
 const SIGNED_URL_TTL_MS = 60 * 60 * 1000;
+// Provider application fields holding document paths; audit summaries show them as "[document]".
+const APPLICATION_DOCUMENT_KEYS = ["id", "dbs", "resume", "profile"] as const;
 
-/** Creates an admin. Only a signed-in super admin may; new admins never get the super admin role here. */
+/**
+ * POST /admin/signup (kept for the current console): creates an operations admin with the password given. Requires
+ * admins.manage (super admins). POST /admin/admins is the newer way, with a role and a one-time password.
+ */
 export const handleSignup = async (req: Request, res: Response) => {
 	try {
-		if (!req.admin?.roles?.superAdmin) {
+		if (!req.admin || !hasPermission(req.admin, "admins.manage")) {
 			return res.status(403).json({ message: "Only a super admin can create admin accounts." });
 		}
 		const errors = validationResult(req);
@@ -47,64 +53,25 @@ export const handleSignup = async (req: Request, res: Response) => {
 			lastName,
 			email,
 			password: hashedPassword,
-			roles: {
-				admin: true,
-				superAdmin: false,
-			},
+			role: "operations",
+			roles: legacyFlagsFor("operations"),
+			createdBy: req.admin._id,
 		});
 		await newAdmin.save();
+		await recordAudit(
+			{
+				action: "admins.created",
+				actor: adminActor(req),
+				target: { type: "admin", id: newAdmin._id },
+				after: { email, firstName, lastName, role: "operations" },
+				metadata: { via: "signup" },
+			},
+			req,
+		);
 
 		res.status(201).json({ message: "Admin created successfully" });
 	} catch (error) {
-		console.error("Error signing up:", error);
-		res.status(500).json({ message: "Internal server error" });
-	}
-};
-
-export const handleLogin = async (req: Request, res: Response) => {
-	try {
-		const errors = validationResult(req);
-		if (!errors.isEmpty()) {
-			return res.status(400).json({
-				message: "Email and password are required.",
-				errors: publicValidationErrors(errors),
-			});
-		}
-		const { email, password } = req.body;
-
-		// Same response and the same bcrypt work whether or not the admin exists.
-		const admin = await Admin.findOne({ email });
-		const passwordMatch = await bcrypt.compare(password, admin?.password ?? DUMMY_ADMIN_HASH);
-		if (!admin || !passwordMatch || !isActiveAdmin(admin)) {
-			return res.status(401).json({ message: "Invalid credentials" });
-		}
-
-		// Response shape unchanged for the admin app: { admin, accessToken } (the password hash is never serialised).
-		// This address may now sign in to this account even while the per-account failure cap is exceeded.
-		recordSuccessfulSignIn("admin", req);
-		res.json({ admin, accessToken: signAdminToken(admin) });
-	} catch (error) {
-		console.error("Error logging in:", error);
-		res.status(500).json({ message: "Internal server error" });
-	}
-};
-
-/** Signs this admin out everywhere by invalidating every token issued so far. */
-export const handleLogout = async (req: Request, res: Response) => {
-	try {
-		await Admin.updateOne({ _id: req.admin?._id }, { $inc: { tokenVersion: 1 } });
-		res.sendStatus(204);
-	} catch (error) {
-		console.error("Error logging out admin:", error);
-		res.status(500).json({ message: "Internal server error" });
-	}
-};
-
-export const handleGetAccount = async (req: Request, res: Response) => {
-	try {
-		res.json({ user: req.admin });
-	} catch (error) {
-		console.error("Error getting account:", error);
+		log.error("Error creating admin", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -117,12 +84,15 @@ export const handleGetProviderAccountRequests = async (req: Request, res: Respon
 
 		const modifiedRequests = await Promise.all(
 			providerAccountRequests.map(async (request) => {
-				const signedUrls = await Promise.all([
-					generateSignedUrl(request.id),
-					generateSignedUrl(request.dbs),
-					generateSignedUrl(request.resume),
-					generateSignedUrl(request.profile),
-				]);
+				// The public demo admin never gets links to identity documents; the console shows "hidden in the demo".
+				const signedUrls = isDemoAdmin(req.admin)
+					? [null, null, null, null]
+					: await Promise.all([
+							generateSignedUrl(request.id),
+							generateSignedUrl(request.dbs),
+							generateSignedUrl(request.resume),
+							generateSignedUrl(request.profile),
+						]);
 
 				return {
 					...request.toObject(),
@@ -137,7 +107,7 @@ export const handleGetProviderAccountRequests = async (req: Request, res: Respon
 		// Send modified requests with signed URLs
 		res.status(200).json(modifiedRequests);
 	} catch (error) {
-		console.error("Error getting provider account requests:", error);
+		log.error("Error getting provider account requests", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -152,12 +122,15 @@ export const handleGetProviderAccountRequestsComplete = async (req: Request, res
 		// Generate signed URLs for each file
 		const modifiedRequests = await Promise.all(
 			providerAccountRequests.map(async (request) => {
-				const signedUrls = await Promise.all([
-					generateSignedUrl(request.id),
-					generateSignedUrl(request.dbs),
-					generateSignedUrl(request.resume),
-					generateSignedUrl(request.profile),
-				]);
+				// The public demo admin never gets links to identity documents; the console shows "hidden in the demo".
+				const signedUrls = isDemoAdmin(req.admin)
+					? [null, null, null, null]
+					: await Promise.all([
+							generateSignedUrl(request.id),
+							generateSignedUrl(request.dbs),
+							generateSignedUrl(request.resume),
+							generateSignedUrl(request.profile),
+						]);
 
 				return {
 					...request.toObject(),
@@ -171,7 +144,7 @@ export const handleGetProviderAccountRequestsComplete = async (req: Request, res
 
 		res.status(200).json(modifiedRequests);
 	} catch (error) {
-		console.error("Error getting provider account requests:", error);
+		log.error("Error getting provider account requests", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -187,7 +160,7 @@ async function generateSignedUrl(filePath: string): Promise<string> {
 		const [url] = await googleCloudStorage.bucket(providerAccountBucket).file(filePath).getSignedUrl(options);
 		return url;
 	} catch (error) {
-		console.error(`Error generating signed URL for file ${filePath}:`, error);
+		log.error("Error generating a signed URL for a provider document", error);
 		throw error;
 	}
 }
@@ -200,17 +173,42 @@ export const handleUpdateProviderAccountRequestStatus = async (req: Request, res
 		if (!existing) return res.status(404).json({ message: "Provider account request not found" });
 
 		// Decide each application once, atomically, so two admins cannot both act on it. Only a rejection
-		// records a reason; an approval leaves rejectReason alone.
-		const update: Record<string, unknown> = { status, updatedAt: new Date() };
+		// records a reason; an approval leaves rejectReason alone. Who decided and when is kept on the application.
+		const now = new Date();
+		const reviewer = req.admin?._id ?? null;
+		const update: Record<string, unknown> = { status, updatedAt: now, reviewedAt: now, reviewedBy: reviewer };
 		if (status === "rejected") update.rejectReason = message;
 		const providerAccountRequest = await ProviderApplicationModel.findOneAndUpdate(
 			{ _id: existing._id, status: "pending" },
-			{ $set: update },
+			{
+				$set: update,
+				$push: {
+					decisions: {
+						status,
+						at: now,
+						by: reviewer,
+						byEmail: req.admin?.email ?? null,
+						reason: status === "rejected" ? message : null,
+					},
+				},
+			},
 			{ new: true },
 		).exec();
 		if (!providerAccountRequest) {
 			return res.status(409).json({ message: "This application has already been reviewed." });
 		}
+		await recordAudit(
+			{
+				action: status === "approved" ? "applications.approved" : "applications.rejected",
+				actor: adminActor(req),
+				target: { type: "provider_application", id: existing._id },
+				before: { status: existing.status },
+				after: { status, ...(status === "rejected" ? { rejectReason: message } : {}) },
+				reason: status === "rejected" ? message : null,
+				documentKeys: APPLICATION_DOCUMENT_KEYS,
+			},
+			req,
+		);
 
 		const user = (await UserModel.findOne({ providerApplications: providerAccountRequestId }).exec()) as any;
 		if (user) {
@@ -226,7 +224,7 @@ export const handleUpdateProviderAccountRequestStatus = async (req: Request, res
 					.file(profileFilePath)
 					.copy(googleCloudStorage.bucket(userProfilesBucket).file(destinationPath));
 			} catch (error) {
-				console.error(`Error copying file to ${destinationPath}:`, error);
+				log.error(`Error copying file to ${destinationPath}`, error);
 				throw error;
 			}
 			user.profile = destinationPath;
@@ -237,13 +235,25 @@ export const handleUpdateProviderAccountRequestStatus = async (req: Request, res
 			user.city = providerAccountRequest.city.toLowerCase();
 			user.street = providerAccountRequest.street.toLowerCase();
 			await user.save();
+			emitEvent(
+				{
+					type: "provider.application_reviewed",
+					subjects: { providerId: user._id, userId: user._id, applicationId: existing._id },
+					properties: {
+						decision: status,
+						...(status === "rejected" ? { reason: message } : {}),
+						waitedMs: now.getTime() - new Date(existing.createdAt).getTime(),
+					},
+				},
+				req,
+			);
 			await updateCometChatUser(userId, destinationPath);
 			await sendAccountReviewNotification(userId, status, message);
 		}
 
 		res.status(200).json("Provider account request and user status updated successfully");
 	} catch (error) {
-		console.error("Error updating provider account request status:", error);
+		log.error("Error updating provider account request status", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -265,6 +275,6 @@ const sendAccountReviewNotification = async (userId: string, status: string, rea
 		});
 		await storeNotification(title, message, userId, "Home", type);
 	} catch (error) {
-		console.error(`Error sending account review notification for user ID ${userId}:`, error);
+		log.error(`Error sending account review notification for user ID ${userId}`, error);
 	}
 };

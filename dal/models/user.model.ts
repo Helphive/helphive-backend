@@ -5,6 +5,14 @@ export interface UserSession {
 	sessionId: string;
 	refreshTokens: string[];
 	lastUsedAt: Date;
+	// Device details, recorded from the request when the session starts and refreshed on each token refresh.
+	// Absent on sessions started before they were recorded.
+	createdAt?: Date;
+	lastIp?: string;
+	userAgent?: string;
+	platform?: string;
+	appVersion?: string;
+	deviceId?: string;
 }
 
 interface Roles {
@@ -96,6 +104,12 @@ const userSchema = new Schema<IUser>(
 					sessionId: { type: String, required: true },
 					refreshTokens: { type: [String], default: [] },
 					lastUsedAt: { type: Date, default: Date.now },
+					createdAt: { type: Date },
+					lastIp: { type: String },
+					userAgent: { type: String },
+					platform: { type: String },
+					appVersion: { type: String },
+					deviceId: { type: String },
 				},
 			],
 			default: [],
@@ -148,6 +162,14 @@ const userSchema = new Schema<IUser>(
 		toObject: { transform: stripSecrets },
 	},
 );
+
+// Admin lists (customers and providers by status and sign-up date), and lookups the API already makes.
+userSchema.index({ createdAt: -1 });
+userSchema.index({ "roles.Provider": 1, providerStatus: 1, createdAt: -1 });
+userSchema.index({ "roles.User": 1, createdAt: -1 });
+userSchema.index({ providerApplications: 1 });
+userSchema.index({ "sessions.sessionId": 1 });
+userSchema.index({ isProviderAvailable: 1, providerStatus: 1 });
 
 // Middleware to hash password before saving
 userSchema.pre("save", async function (next) {

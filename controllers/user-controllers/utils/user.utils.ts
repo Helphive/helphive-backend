@@ -2,6 +2,7 @@ import { describeBooking } from "./booking.utils";
 import { GOOGLE_CLOUD_TASKS_QUEUE_PATH, SERVER_BASE_URL } from "../../../config/config";
 import { googleCloudTasks } from "../../service-accounts/cloud-tasks";
 import { sendNotification, storeNotification } from "../../service-accounts/onesignal";
+import log from "../../../lib/logger";
 
 export const sendBookingStartApprovedNotification = async (providerId: string, booking: any) => {
 	const bookingId = booking._id.toString();
@@ -17,7 +18,7 @@ export const sendBookingStartApprovedNotification = async (providerId: string, b
 		});
 		await storeNotification(title, message, providerId, "MyOrderDetails", "booking_started", bookingId);
 	} catch (error: any) {
-		console.error(`Error sending booking started notification for booking ID ${bookingId}:`, error.response);
+		log.error(`Error sending booking started notification for booking ID ${bookingId}`, error);
 	}
 };
 

@@ -1,6 +1,7 @@
 import axios from "axios";
 import { COMET_CHAT_BASE_URL } from "../../../config/config";
 import { USER_PROFILES_BUCKET } from "../../../config/config";
+import log from "../../../lib/logger";
 
 const apiKey = process.env.COMET_CHAT_REST_API_KEY || "";
 
@@ -26,9 +27,9 @@ export const createCometChatUser = async (userId: string, email: string, name: s
 		);
 	} catch (error: any) {
 		if (error.response) {
-			console.error("Error Response:", error.response.data);
+			log.error("Error Response", error.response.data);
 		} else {
-			console.error("Error:", error.message);
+			log.error("Error", error.message);
 		}
 	}
 };
@@ -55,9 +56,9 @@ export const sendCometChatMessage = async (userId: string, friendId: string) => 
 		await axios.post(url, payload, { headers });
 	} catch (error: any) {
 		if (error.response) {
-			console.error("Error Response:", error.response.data);
+			log.error("Error Response", error.response.data);
 		} else {
-			console.error("Error:", error.message);
+			log.error("Error", error.message);
 		}
 	}
 };
@@ -86,9 +87,9 @@ export const updateCometChatUser = async (userId: string, profile: string) => {
 		);
 	} catch (error: any) {
 		if (error.response) {
-			console.error("Error Response:", error.response.data);
+			log.error("Error Response", error.response.data);
 		} else {
-			console.error("Error:", error.message);
+			log.error("Error", error.message);
 		}
 	}
 };

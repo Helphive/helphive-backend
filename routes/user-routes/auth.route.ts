@@ -46,13 +46,17 @@ import {
 	verifyEmailLimiter,
 } from "../../middleware/rateLimit";
 import { uploadFields } from "../../middleware/uploads";
+import { rejectUndeliverableSignup } from "../../middleware/signupEmailCheck";
 
 const authRoute = express.Router();
 
+// Sign-up needs the verification email, so an address the email policy would never send to is refused (400) after
+// the limiter and validation and before any account is created (lib/emailPolicy.ts).
 authRoute.post(
 	"/signup",
 	signupLimiter,
 	validateSignupFields,
+	rejectUndeliverableSignup("customer"),
 	handleSignup,
 	markSignupFlow,
 	createContact,
@@ -62,6 +66,7 @@ authRoute.post(
 	"/provider-signup",
 	signupLimiter,
 	validateSignupFields,
+	rejectUndeliverableSignup("provider"),
 	handleSignupProvider,
 	markSignupFlow,
 	createContact,

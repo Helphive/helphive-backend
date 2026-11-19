@@ -19,7 +19,13 @@ import {
 	userOrIpKey,
 } from "../middleware/rateLimitKeys";
 
+import { setEventWriter } from "../lib/events";
+import { setLogSink } from "../lib/logger";
+
 process.env.ACCESS_TOKEN_SECRET = "test-access-secret";
+// No database here: events go nowhere and expected error logs stay quiet.
+setEventWriter(async () => undefined);
+setLogSink(() => undefined);
 // Imported after the secret is set; the limiters read it per request.
 const { createLimiter, globalLimiter, lookupKnownAddress } =
 	// eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -268,10 +274,10 @@ test("known-address keys are per account and per address, hashed, with IPv6 grou
 	assert.equal(knownAddressKey("user", ["owner@example.com"], "203.0.113.7", "s1"), null);
 });
 
-test("over the cap: known addresses pass, unknown ones are refused, a failed lookup fails open", async () => {
+test("over the cap: known addresses pass, unknown ones are refused, a failed lookup is refused (fail closed)", async () => {
 	assert.equal(accountCapDecision("known"), "allow");
 	assert.equal(accountCapDecision("unknown"), "block");
-	assert.equal(accountCapDecision("error"), "allow");
+	assert.equal(accountCapDecision("error"), "block");
 	// No usable email means no record can exist (validation rejects such a request anyway); no database call.
 	assert.equal(await lookupKnownAddress(null), "unknown");
 });
@@ -316,6 +322,35 @@ test("a limiter with an over-limit hook lets allowed requests through without Re
 	assert.deepEqual(unknown.res.body, { message: "Too many requests. Please try again later." });
 
 	const broken = await attempt("throw");
-	assert.equal(broken.passed, true, "an error in the hook fails open");
-	assert.equal(broken.res.headers["retry-after"], undefined);
+	assert.equal(broken.passed, false, "an error in the hook fails closed once the counter is over the limit");
+	assert.equal(broken.res.statusCode, 429);
+	assert.ok(Number(broken.res.headers["retry-after"]) > 0);
+	assert.deepEqual(broken.res.body, { message: "Too many requests. Please try again later." });
 });
+
+for (const scope of ["user", "admin"] as const) {
+	test(`${scope}: over the cap, a failed or timed-out known-address lookup answers 429 with Retry-After`, async () => {
+		// The account-cap hook as wired in middleware/rateLimit.ts, with the lookup answering "error" (its result on an
+		// error or a timeout).
+		const lookups: ("known" | "error")[] = ["error"];
+		const limiter = createLimiter({
+			name: `test-${scope}-cap-lookup-error`,
+			rule: { windowMs: 60_000, limit: 1 },
+			kind: "local",
+			key: () => `account:${scope}`,
+			onLimitReached: async (_req, res, next, reject) => {
+				if (accountCapDecision(lookups.shift() ?? "error") === "block") return reject();
+				res.removeHeader("Retry-After");
+				next();
+			},
+		});
+		assert.equal((await run(limiter, fakeRequest())).passed, true, "under the cap");
+		const res = fakeResponse();
+		let passed = false;
+		await limiter(fakeRequest(), res, () => (passed = true));
+		await settle();
+		assert.equal(passed, false);
+		assert.equal(res.statusCode, 429);
+		assert.ok(Number(res.headers["retry-after"]) > 0);
+	});
+}

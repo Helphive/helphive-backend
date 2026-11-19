@@ -23,6 +23,10 @@ const earningSchema = new Schema<IEarning>(
 	},
 );
 
+earningSchema.index({ bookingId: 1 });
+earningSchema.index({ status: 1, createdAt: -1 });
+earningSchema.index({ createdAt: -1 });
+
 const EarningModel = mongoose.model<IEarning>("Earning", earningSchema);
 
 export default EarningModel;

@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import { Resend } from "resend";
 import stripe from "../service-accounts/stripe";
 import { sendNotification, storeNotification } from "../service-accounts/onesignal";
 import UserModel from "../../dal/models/user.model";
@@ -10,10 +9,13 @@ import { SUPPORT_EMAIL } from "../../config/config";
 import Stripe from "stripe";
 import RefundEmail from "../../emails/refundEmail";
 import { describeBooking, formatMoney } from "../user-controllers/utils/booking.utils";
+import { sendEmail } from "../../lib/email";
+import { emitEvent } from "../../lib/events";
+import log from "../../lib/logger";
+import { beginStripeDelivery, trackWebhookWork, type WebhookDelivery } from "../../lib/webhookRecorder";
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 const connectedEndpointSecret = process.env.STRIPE_CONNECTED_WEBHOOK_SECRET || "";
-const resend = new Resend(process.env.RESEND_API_KEY);
 const supportEmail = SUPPORT_EMAIL || "";
 
 /**
@@ -22,7 +24,7 @@ const supportEmail = SUPPORT_EMAIL || "";
  */
 const verifyStripeEvent = (req: Request, res: Response, secret: string, name: string): Stripe.Event | null => {
 	if (!secret) {
-		console.error(`${name} is not set; refusing Stripe webhook calls.`);
+		log.error(`${name} is not set; refusing Stripe webhook calls.`);
 		res.status(503).json({ message: "Webhook not configured." });
 		return null;
 	}
@@ -34,68 +36,122 @@ const verifyStripeEvent = (req: Request, res: Response, secret: string, name: st
 	try {
 		return stripe.webhooks.constructEvent(req.body, sig, secret);
 	} catch (err: any) {
-		console.log(`Stripe Webhook signature verification failed:`, err.message);
+		log.warn("Stripe webhook signature verification failed", { reason: err?.message });
 		res.status(400).json({ message: "Invalid signature." });
 		return null;
 	}
+};
+
+/**
+ * Each verified event is recorded (webhookevents) with what came of it. An event id already processed is answered
+ * 200 without running the handler again; every handler below was already safe to repeat, so this only saves work.
+ */
+const dispatch = async (
+	endpoint: "platform" | "connected",
+	event: Stripe.Event,
+	handle: (delivery: WebhookDelivery) => void,
+) => {
+	const delivery = await beginStripeDelivery(endpoint, event);
+	// A redelivery only bumps the record's delivery count; its outcome stays what the first delivery recorded.
+	if (!delivery.shouldProcess) return;
+	handle(delivery);
 };
 
 export const handleStripeWebhook = async (req: Request, res: Response) => {
 	const event = verifyStripeEvent(req, res, endpointSecret, "STRIPE_WEBHOOK_SECRET");
 	if (!event) return;
 
-	switch (event.type) {
-		case "payment_intent.succeeded":
-			const paymentIntent = event.data.object;
-			updatePaymentStatus(paymentIntent.id, "completed");
-			break;
-		case "refund.updated":
-			const refund = event.data.object;
-			if (refund.status) {
+	await dispatch("platform", event, (delivery) => {
+		switch (event.type) {
+			case "payment_intent.succeeded":
+				trackWebhookWork(delivery, updatePaymentStatus(event.data.object.id, "completed"));
+				break;
+			case "payment_intent.payment_failed":
+				// Recorded as an event only; the booking stays unpaid and the customer can try again, as before.
+				trackWebhookWork(delivery, recordPaymentFailed(event.data.object));
+				break;
+			case "refund.updated": {
+				const refund = event.data.object;
 				if (refund.status === "succeeded") {
-					updateRefundStatus(refund, "succeeded");
+					trackWebhookWork(delivery, updateRefundStatus(refund, "succeeded"));
 				} else if (refund.status === "failed") {
-					updateRefundStatus(refund, "failed");
+					trackWebhookWork(delivery, updateRefundStatus(refund, "failed"));
 				} else if (refund.status === "canceled") {
-					updateRefundStatus(refund, "cancelled");
+					trackWebhookWork(delivery, updateRefundStatus(refund, "cancelled"));
+				} else {
+					delivery.finish("ignored", { note: `refund status ${refund.status}` });
 				}
+				break;
 			}
-			break;
-		case "refund.failed":
-			const failedRefund = event.data.object;
-			updateRefundStatus(failedRefund, "failed");
-			break;
+			case "refund.failed":
+				trackWebhookWork(delivery, updateRefundStatus(event.data.object, "failed"));
+				break;
 
-		default:
-			console.log(`Unhandled event type ${event.type}`);
-	}
+			default:
+				log.info(`Unhandled Stripe event type ${event.type}`);
+				delivery.finish("ignored");
+		}
+	});
 
 	return res.status(200).json({ message: "Stripe webhook received" });
 };
 
-const updatePaymentStatus = async (paymentIntentId: string, status: "pending" | "completed" | "cancelled") => {
+const updatePaymentStatus = async (
+	paymentIntentId: string,
+	status: "pending" | "completed" | "cancelled",
+): Promise<string | void> => {
 	try {
 		// Stripe can deliver an event more than once; only the first transition notifies anyone.
 		const payment = await PaymentModel.findOneAndUpdate(
 			{ paymentIntentId, status: { $ne: status } },
-			{ $set: { status } },
+			{ $set: { status, ...(status === "completed" ? { paidAt: new Date() } : {}) } },
 			{ new: true },
 		);
 		if (!payment) {
-			console.log(`Payment with intent ID ${paymentIntentId} not found or already ${status}.`);
-			return;
+			log.info(`Payment with intent ID ${paymentIntentId} not found or already ${status}.`);
+			return `payment not found or already ${status}`;
 		}
 		const booking = await BookingModel.findById(payment.bookingId);
 		if (!booking) {
-			console.error(`Booking with ID ${payment.bookingId} not found.`);
-			return;
+			log.error(`Booking with ID ${payment.bookingId} not found.`);
+			return "booking not found";
+		}
+		if (status === "completed") {
+			const subjects = { userId: booking.userId, bookingId: booking._id, paymentId: payment._id };
+			emitEvent({
+				type: "payment.succeeded",
+				actor: { type: "system" },
+				subjects,
+				properties: { amount: payment.amount },
+			});
+			emitEvent({
+				type: "booking.paid",
+				actor: { type: "system" },
+				subjects,
+				properties: { amount: payment.amount },
+			});
 		}
 		await sendPaymentSucceededNotification(booking);
 		await sendBookingNotification(payment.bookingId, booking);
-		console.log(`Payment status updated to ${status} for intent ID ${paymentIntentId}.`);
+		log.info(`Payment status updated to ${status} for intent ID ${paymentIntentId}.`);
 	} catch (error) {
-		console.error(`Error updating payment status for intent ID ${paymentIntentId}:`, error);
+		log.error(`Error updating payment status for intent ID ${paymentIntentId}`, error);
+		throw error;
 	}
+};
+
+const recordPaymentFailed = async (intent: Stripe.PaymentIntent): Promise<string | void> => {
+	const payment = await PaymentModel.findOne({ paymentIntentId: intent.id }).select("_id bookingId").lean().exec();
+	emitEvent({
+		type: "payment.failed",
+		actor: { type: "system" },
+		subjects: { bookingId: payment?.bookingId ?? intent.metadata?.bookingId, paymentId: payment?._id },
+		properties: {
+			failureCode: intent.last_payment_error?.code ?? null,
+			declineCode: intent.last_payment_error?.decline_code ?? null,
+		},
+	});
+	return payment ? undefined : "payment not found";
 };
 
 const sendPaymentSucceededNotification = async (booking: InstanceType<typeof BookingModel>) => {
@@ -112,7 +168,7 @@ const sendPaymentSucceededNotification = async (booking: InstanceType<typeof Boo
 		});
 		await storeNotification(title, message, userId, "BookingDetails", "payment_succeeded", bookingId);
 	} catch (error: any) {
-		console.error(`Error sending payment notification for booking ID ${bookingId}:`, error.response);
+		log.error(`Error sending payment notification for booking ID ${bookingId}`, error);
 	}
 };
 
@@ -135,7 +191,7 @@ const sendBookingNotification = async (bookingId: any, booking: InstanceType<typ
 		});
 
 		if (providersInRadius.length === 0) {
-			console.log(`No providers available within 25km radius for booking ID ${bookingId}.`);
+			log.info(`No providers available within 25km radius for booking ID ${bookingId}.`);
 			return;
 		}
 
@@ -154,10 +210,7 @@ const sendBookingNotification = async (bookingId: any, booking: InstanceType<typ
 			await storeNotification(title, message, provider, "AcceptOrder", "booking_created", bookingId.toString());
 		}
 	} catch (error: any) {
-		console.error(
-			`Error sending booking notification for booking ID ${bookingId} to available providers:`,
-			error.response,
-		);
+		log.error(`Error sending booking notification for booking ID ${bookingId} to available providers`, error);
 	}
 };
 
@@ -181,55 +234,66 @@ export const handleStripeConnectedPayoutsWebhook = async (req: Request, res: Res
 	const event = verifyStripeEvent(req, res, connectedEndpointSecret, "STRIPE_CONNECTED_WEBHOOK_SECRET");
 	if (!event) return;
 
-	switch (event.type) {
-		case "payout.paid":
-			const payout = event.data.object;
-			updatePayoutStatus(payout.id, "paid");
-			break;
+	await dispatch("connected", event, (delivery) => {
+		switch (event.type) {
+			case "payout.paid":
+				trackWebhookWork(delivery, updatePayoutStatus(event.data.object.id, "paid"));
+				break;
 
-		case "payout.failed":
-			const failedPayout = event.data.object;
-			updatePayoutStatus(failedPayout.id, "failed");
-			break;
+			case "payout.failed":
+				trackWebhookWork(delivery, updatePayoutStatus(event.data.object.id, "failed"));
+				break;
 
-		case "payout.canceled":
-			const canceledPayout = event.data.object;
-			updatePayoutStatus(canceledPayout.id, "cancelled");
-			break;
+			case "payout.canceled":
+				trackWebhookWork(delivery, updatePayoutStatus(event.data.object.id, "cancelled"));
+				break;
 
-		default:
-			console.log(`Unhandled event type ${event.type}`);
-	}
+			default:
+				log.info(`Unhandled Stripe event type ${event.type}`);
+				delivery.finish("ignored");
+		}
+	});
 
 	return res.status(200).json({ message: "Stripe webhook received" });
 };
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const updatePayoutStatus = async (payoutId: string, status: "paid" | "failed" | "cancelled") => {
+const updatePayoutStatus = async (
+	payoutId: string,
+	status: "paid" | "failed" | "cancelled",
+): Promise<string | void> => {
 	try {
 		// The payout record is written just after Stripe creates the payout; give it a moment to exist.
 		await delay(5000);
 		// One atomic transition per status. Failed and cancelled are final, so a redelivered event can never credit
 		// the balance twice.
+		const now = new Date();
 		const previous = await PayoutModel.findOneAndUpdate(
 			{ payoutId, status: { $nin: ["failed", "cancelled", status] } },
-			{ $set: { status } },
+			{ $set: { status, ...(status === "paid" ? { paidAt: now } : { failedAt: now }) } },
 			{ new: false },
 		);
 		if (!previous) {
-			console.log(`Payout ${payoutId} not found or already ${status}.`);
-			return;
+			log.info(`Payout ${payoutId} not found or already ${status}.`);
+			return `payout not found or already ${status}`;
 		}
 		if (status === "failed" || status === "cancelled") {
 			await UserModel.updateOne({ _id: previous.userId }, { $inc: { availableBalance: previous.amount } });
 		}
+		emitEvent({
+			type: status === "paid" ? "payout.paid" : "payout.failed",
+			actor: { type: "system" },
+			subjects: { providerId: previous.userId as any, payoutId: previous._id },
+			properties: status === "paid" ? { amount: previous.amount } : { status, amount: previous.amount },
+		});
 
 		if (status === "paid") {
 			await sendPayoutPaidNotification(previous.userId.toString(), previous.amount);
 		}
 	} catch (error) {
-		console.error(`Error updating payout status for payout ID ${payoutId}:`, error);
+		log.error(`Error updating payout status for payout ID ${payoutId}`, error);
+		throw error;
 	}
 };
 
@@ -245,21 +309,25 @@ const sendPayoutPaidNotification = async (userId: string, amount: number) => {
 		});
 		await storeNotification(title, message, userId, "Earnings", "payout_paid");
 	} catch (error) {
-		console.error(`Error sending payout notification for user ID ${userId}:`, error);
+		log.error(`Error sending payout notification for user ID ${userId}`, error);
 	}
 };
 
-const updateRefundStatus = async (refund: Stripe.Refund, status: "pending" | "succeeded" | "failed" | "cancelled") => {
+const updateRefundStatus = async (
+	refund: Stripe.Refund,
+	status: "pending" | "succeeded" | "failed" | "cancelled",
+): Promise<string | void> => {
 	try {
 		await delay(5000);
-		if (typeof refund.id !== "string" || !refund.id) return;
+		if (typeof refund.id !== "string" || !refund.id) return "refund without id";
 		const payment = await PaymentModel.findOne({ refundId: refund.id });
 		if (!payment) {
-			console.error(`Refund with ID ${refund.id} not found.`);
-			return;
+			log.error(`Refund with ID ${refund.id} not found.`);
+			return "refund not found";
 		}
 		// Stripe may redeliver refund.updated; only notify on the first transition to succeeded.
 		const alreadySucceeded = payment.refundStatus === "succeeded";
+		const previousStatus = payment.refundStatus;
 		payment.refundStatus = status;
 		payment.refundId = refund.id;
 		payment.refundAmount = refund.amount / 100;
@@ -269,46 +337,56 @@ const updateRefundStatus = async (refund: Stripe.Refund, status: "pending" | "su
 		};
 		await payment.save();
 
+		if (previousStatus !== status && (status === "succeeded" || status === "failed" || status === "cancelled")) {
+			emitEvent({
+				type: status === "succeeded" ? "refund.succeeded" : "refund.failed",
+				actor: { type: "system" },
+				subjects: { bookingId: payment.bookingId, paymentId: payment._id },
+				properties:
+					status === "succeeded"
+						? { amount: payment.refundAmount }
+						: { status, amount: payment.refundAmount },
+			});
+		}
+
 		if (status == "succeeded" && !alreadySucceeded) {
 			const booking = await BookingModel.findOne({ _id: payment.bookingId });
 			if (!booking) {
-				console.error(`Booking with ID ${payment.bookingId} not found.`);
-				return;
+				log.error(`Booking with ID ${payment.bookingId} not found.`);
+				return "booking not found";
 			}
 			const user = await UserModel.findOne({ _id: booking.userId });
 			if (!user) {
-				console.error(`User with ID ${booking.userId} not found.`);
-				return;
+				log.error(`User with ID ${booking.userId} not found.`);
+				return "user not found";
 			}
 			await sendRefundEmail(user, payment);
 			await sendRefundNotification(String(user._id), booking, payment.refundAmount);
 		}
 	} catch (error) {
-		console.error(`Error updating refund status for refund ID ${refund.id}:`, error);
+		log.error(`Error updating refund status for refund ID ${refund.id}`, error);
+		throw error;
 	}
 };
 
+/** Refund notice. Skipped (and recorded) for addresses the recipient policy blocks, such as the demo customer. */
 const sendRefundEmail = async (user: InstanceType<typeof UserModel>, payment: InstanceType<typeof PaymentModel>) => {
-	try {
-		const { error } = await resend.emails.send({
-			from: `Helphive <${supportEmail}>`,
-			to: [user.email],
-			subject: "A Payment was Refunded to your Account",
-			react: RefundEmail({
-				bookingId: `#${payment.bookingId.toString().slice(-6).toUpperCase()}`,
-				refundAmount: payment.refundAmount,
-				refundId: `#${payment.refundId.slice(-6).toUpperCase()}`,
-				refundCreated: payment.refundCreated || new Date(),
-				refundStatus: payment.refundStatus ?? "pending",
-				destinationAccountType: payment.destinationDetails.type,
-			}),
-		});
-		if (error) {
-			throw new Error(`${error}`);
-		}
-	} catch (error) {
-		console.error(`Error sending refund email for refund:`, error);
-	}
+	const result = await sendEmail({
+		template: "refund",
+		from: `Helphive <${supportEmail}>`,
+		to: user.email,
+		subject: "A Payment was Refunded to your Account",
+		react: RefundEmail({
+			bookingId: `#${payment.bookingId.toString().slice(-6).toUpperCase()}`,
+			refundAmount: payment.refundAmount,
+			refundId: `#${payment.refundId.slice(-6).toUpperCase()}`,
+			refundCreated: payment.refundCreated || new Date(),
+			refundStatus: payment.refundStatus ?? "pending",
+			destinationAccountType: payment.destinationDetails.type,
+		}),
+		userId: String(user._id),
+	});
+	if (result.status === "failed") log.error("Error sending refund email", { error: result.error });
 };
 
 const sendRefundNotification = async (userId: string, booking: any, refundAmount: number) => {
@@ -324,6 +402,6 @@ const sendRefundNotification = async (userId: string, booking: any, refundAmount
 		});
 		await storeNotification(title, message, userId, "BookingDetails", "payment_refunded", bookingId);
 	} catch (error) {
-		console.error(`Error sending refund notification for booking ID ${bookingId}:`, error);
+		log.error(`Error sending refund notification for booking ID ${bookingId}`, error);
 	}
 };

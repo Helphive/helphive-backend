@@ -11,6 +11,10 @@ export interface Booking extends Document {
 	rate: number;
 	hours: number;
 	startDate: Date;
+	/** When a provider accepted (set from the accept endpoint; absent on bookings accepted before it existed). */
+	acceptedAt: Date | null;
+	/** When the provider asked the customer to approve the start. */
+	startRequestedAt: Date | null;
 	startedAt: Date;
 	completedAt: Date;
 	completedBy: mongoose.Types.ObjectId;
@@ -63,6 +67,14 @@ const bookingSchema: Schema = new Schema(
 			type: Date,
 			required: true,
 		},
+		acceptedAt: {
+			type: Date,
+			default: null,
+		},
+		startRequestedAt: {
+			type: Date,
+			default: null,
+		},
 		startedAt: {
 			type: Date,
 			default: null,
@@ -107,6 +119,14 @@ const bookingSchema: Schema = new Schema(
 	},
 	{ timestamps: true },
 );
+
+// App queries (a customer's or provider's bookings, open jobs) and admin lists (by status and dates).
+bookingSchema.index({ userId: 1, createdAt: -1 });
+bookingSchema.index({ providerId: 1, startDate: -1 });
+bookingSchema.index({ status: 1, providerId: 1, startDate: 1 });
+bookingSchema.index({ status: 1, createdAt: -1 });
+bookingSchema.index({ createdAt: -1 });
+bookingSchema.index({ startDate: -1 });
 
 bookingSchema.pre<Booking>("save", function (next) {
 	const service = this.service;

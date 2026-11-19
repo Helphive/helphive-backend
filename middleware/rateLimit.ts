@@ -2,6 +2,9 @@ import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { rateLimit, type Options } from "express-rate-limit";
 import { MongoRateLimitStore, isKnownAddress, rememberKnownAddress } from "./mongoRateLimitStore";
+import { EventSampler, emitEvent } from "../lib/events";
+import { isDemoAdminEmail } from "../config/demoAccounts";
+import log from "../lib/logger";
 import {
 	KNOWN_ADDRESS_TTL_MS,
 	RATE_LIMITS,
@@ -9,6 +12,8 @@ import {
 	accountAndIpKey,
 	accountCapDecision,
 	accountCapKey,
+	adminRefreshKey,
+	mfaChallengeKey,
 	ipKey,
 	knownAddressKey,
 	normalizeEmail,
@@ -26,8 +31,8 @@ import {
  *   sign-in, booking creation, payment intents and payouts.
  * - "local" ones count in this instance's memory. With N instances a client can get up to N times the limit, and the
  *   counts reset when an instance restarts. They bound bursts and resource use, not totals.
- * Every 429 carries Retry-After and a JSON { message }. Shared limiters fail open: if MongoDB is unreachable the
- * request goes through.
+ * Every 429 carries Retry-After and a JSON { message }. Shared limiters fail open when the counter store itself is
+ * unavailable (passOnStoreError): a database outage must not lock everyone out.
  *
  * Sign-in (users and admins) has three layers, all counting failed attempts only (a success is uncounted again):
  * 1. Per client address (users 30, admins 10 per 15 min): bounds what one source can try against all accounts.
@@ -37,6 +42,9 @@ import {
  *    is set at twice what a single address can ever send (layer 1 caps that; tests/rateLimit.test.ts asserts it),
  *    and when it is exceeded only addresses that have NOT signed in to that account in the last 30 days get 429.
  *    Each successful sign-in records its (account, address) pair, as a keyed hash, for 30 days.
+ *    Once the counter has confirmed the account is over its cap, the known-address lookup must answer "known" for the
+ *    attempt to proceed: a lookup that fails or times out gets 429 with Retry-After (fail closed), for users and
+ *    admins alike. Only a failure of the counter store itself fails open.
  * Trade-off: during an attack big enough to reach layer 3 (12+ addresses for a user, 4+ for an admin, as layer 2 lets
  * each address add at most 25 an hour), the real owner can still sign in from any address they used in the last 30
  * days, but not from a new one (a new phone network, a hotel Wi-Fi) until the hour window ends. The attacker's guesses from new addresses stop at the cap. The known-address lookup costs a
@@ -59,6 +67,27 @@ interface LimiterSpec {
 	onLimitReached?: (req: Request, res: Response, next: NextFunction, reject: () => void) => Promise<void>;
 }
 
+// Refusals are recorded as security.rate_limited events, sampled so an attack cannot flood the collection: the first
+// per limiter and client key every 10 minutes, at most 60 a minute per instance.
+const rateLimitSampler = new EventSampler();
+
+const recordLimited = (name: string, req: Request, key: string | null) => {
+	try {
+		const sample = rateLimitSampler.take(`${name}|${key ?? "?"}`);
+		if (!sample) return;
+		emitEvent(
+			{
+				type: "security.rate_limited",
+				actor: { type: "anonymous" },
+				properties: { limiter: name, path: req.path, suppressed: sample.suppressed },
+			},
+			req,
+		);
+	} catch {
+		// Recording is best effort.
+	}
+};
+
 const sendLimited = (res: Response) => {
 	if (!res.headersSent) res.status(429).json({ message: RATE_LIMIT_MESSAGE });
 };
@@ -79,17 +108,18 @@ export const createLimiter = ({ name, rule, kind, key, failuresOnly, isFailure, 
 		// If MongoDB is unreachable the request goes through rather than locking everyone out.
 		passOnStoreError: true,
 		...(kind === "shared" ? { store: new MongoRateLimitStore(name) } : {}),
-		...(onLimitReached
-			? {
-					handler: (req: Request, res: Response, next: NextFunction) => {
-						onLimitReached(req, res, next, () => sendLimited(res)).catch((error) => {
-							console.error(`Rate limiter ${name} failed; allowing the request:`, error);
-							res.removeHeader("Retry-After");
-							next();
-						});
-					},
-				}
-			: {}),
+		handler: (req: Request, res: Response, next: NextFunction) => {
+			const reject = () => {
+				recordLimited(name, req, key(req));
+				sendLimited(res);
+			};
+			if (!onLimitReached) return reject();
+			// The counter already confirmed the limit is passed; if the hook cannot decide, refuse (fail closed).
+			onLimitReached(req, res, next, reject).catch((error) => {
+				log.error(`Rate limiter ${name} could not decide; refusing the request`, error);
+				reject();
+			});
+		},
 	} as Partial<Options>);
 
 const accessTokenKey = () => process.env.ACCESS_TOKEN_SECRET || "";
@@ -124,14 +154,18 @@ export const globalLimiter = createLimiter({
 	name: "global",
 	rule: RATE_LIMITS.globalUser,
 	kind: "local",
-	key: (req) => (req.path.startsWith("/webhook/") ? null : userOrIpKey(bearerEmail(req), req.ip)),
+	// Webhooks are limited separately; health probes are never limited.
+	key: (req) =>
+		req.path.startsWith("/webhook/") || req.path === "/healthz" || req.path === "/readyz"
+			? null
+			: userOrIpKey(bearerEmail(req), req.ip),
 	limit: (req) => (bearerEmail(req) ? RATE_LIMITS.globalUser.limit : RATE_LIMITS.globalAnonymous.limit),
 });
 
 /** Keys sign-in hashes; a stable server secret so the database holds no emails or addresses for them. */
 const signInHashSecret = () => process.env.RATE_LIMIT_HASH_SECRET || process.env.ACCESS_TOKEN_SECRET || "";
 
-// Lookups of known addresses give up after this, and the attempt is allowed (fail open).
+// Lookups of known addresses give up after this; an over-cap attempt whose lookup fails is refused (fail closed).
 const KNOWN_ADDRESS_LOOKUP_TIMEOUT_MS = 2000;
 
 export const lookupKnownAddress = async (key: string | null): Promise<KnownAddressLookup> => {
@@ -146,7 +180,7 @@ export const lookupKnownAddress = async (key: string | null): Promise<KnownAddre
 		});
 		return (await Promise.race([isKnownAddress(key), timeout])) ? "known" : "unknown";
 	} catch (error) {
-		console.error("Known-address lookup failed; allowing the sign-in attempt:", error);
+		log.error("Known-address lookup failed; refusing the over-cap sign-in attempt", error);
 		return "error";
 	} finally {
 		if (timer) clearTimeout(timer);
@@ -159,7 +193,13 @@ const accountCapLimiter = (scope: SignInScope, rule: LimitRule) =>
 		name: `${scope === "admin" ? "admin-" : ""}login-account`,
 		rule,
 		kind: "shared",
-		key: (req) => accountCapKey(scope, req.body?.email, signInHashSecret()),
+		// The demo admin's password is public and many visitors share it, so there is nothing to guess and a cap on
+		// the account would only let anyone lock it for everyone. It is exempt from this layer; its sign-ins are
+		// limited per address instead (middleware/demoAdmin.ts), and layers 1 and 2 still apply per address.
+		key: (req) =>
+			scope === "admin" && isDemoAdminEmail(req.body?.email)
+				? null
+				: accountCapKey(scope, req.body?.email, signInHashSecret()),
 		failuresOnly: true,
 		onLimitReached: async (req, res, next, reject) => {
 			const lookup = await lookupKnownAddress(
@@ -175,11 +215,11 @@ const accountCapLimiter = (scope: SignInScope, rule: LimitRule) =>
  * Call after a successful sign-in: the address is exempt from the account cap for 30 days. Never delays or fails the
  * sign-in itself.
  */
-export const recordSuccessfulSignIn = (scope: SignInScope, req: Request) => {
-	const key = knownAddressKey(scope, req.body?.email, req.ip, signInHashSecret());
+export const recordSuccessfulSignIn = (scope: SignInScope, req: Request, email: unknown = req.body?.email) => {
+	const key = knownAddressKey(scope, email, req.ip, signInHashSecret());
 	if (!key) return;
 	rememberKnownAddress(key, KNOWN_ADDRESS_TTL_MS).catch((error) =>
-		console.error("Could not record the sign-in address:", error),
+		log.error("Could not record the sign-in address", error),
 	);
 };
 
@@ -295,6 +335,55 @@ export const adminLoginLimiters = [
 		failuresOnly: true,
 	}),
 	accountCapLimiter("admin", RATE_LIMITS.adminLoginFailuresPerAccount),
+];
+
+// Two-step codes: failures only, per admin (shared across addresses) and per address. The admin comes from the
+// challenge token at sign-in, or from the signed-in admin for confirm/disable/regenerate; both share one counter.
+const signedInAdminId = (req: Request): string | null => {
+	const admin = (req as Request & { admin?: { _id: unknown } }).admin;
+	return admin ? String(admin._id) : null;
+};
+const mfaAdminKey = (req: Request) => {
+	const adminId = signedInAdminId(req);
+	return adminId ? `mfa-admin:${adminId}` : mfaChallengeKey(req.body?.challengeToken);
+};
+
+export const adminMfaLimiters = [
+	createLimiter({
+		name: "admin-mfa-ip",
+		rule: RATE_LIMITS.adminMfaFailuresPerIp,
+		kind: "shared",
+		key: byIp,
+		failuresOnly: true,
+	}),
+	createLimiter({
+		name: "admin-mfa-admin",
+		rule: RATE_LIMITS.adminMfaFailuresPerAdmin,
+		kind: "shared",
+		key: mfaAdminKey,
+		failuresOnly: true,
+	}),
+];
+
+export const adminPasswordChangeLimiter = createLimiter({
+	name: "admin-password-change",
+	rule: RATE_LIMITS.adminPasswordChangeFailures,
+	kind: "shared",
+	key: (req) => {
+		const adminId = signedInAdminId(req);
+		return adminId ? `admin:${adminId}` : null;
+	},
+	failuresOnly: true,
+});
+
+export const adminRefreshLimiters = [
+	createLimiter({ name: "admin-refresh-ip", rule: RATE_LIMITS.refreshPerIp, kind: "local", key: byIp }),
+	createLimiter({
+		name: "admin-refresh-session",
+		rule: RATE_LIMITS.adminRefreshPerSession,
+		kind: "local",
+		key: (req) => adminRefreshKey(req.cookies?.hh_admin_refresh, req.ip),
+	}),
 ];
 
 /** Counts only calls the endpoint rejected as unauthenticated, so genuine Stripe and Cloud Tasks calls never count. */

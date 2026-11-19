@@ -1,0 +1,235 @@
+// Every business event type, who emits it, the subject ids it carries and its properties. backend-platform.md is
+// written from this list; tests check that every emitted type is listed here. Money is in dollars (as stored).
+
+export interface EventTypeDoc {
+	description: string;
+	subjects: readonly string[];
+	properties: Record<string, string>;
+}
+
+export const EVENT_CATALOGUE = {
+	"user.signed_up": {
+		description: "A customer or provider account was created (before email verification).",
+		subjects: ["userId"],
+		properties: { role: "customer | provider" },
+	},
+	"user.email_verified": {
+		description: "The verification link was used.",
+		subjects: ["userId"],
+		properties: {},
+	},
+	"user.profile_updated": {
+		description: "The person changed their profile.",
+		subjects: ["userId"],
+		properties: {
+			fields: "names of the fields changed (never their values)",
+			photo: "true when a new photo was uploaded",
+		},
+	},
+	"auth.sign_in_succeeded": {
+		description: "Customer or provider signed in.",
+		subjects: ["userId"],
+		properties: { role: "customer | provider" },
+	},
+	"auth.sign_in_failed": {
+		description: "Customer or provider sign-in refused (rate-limited attempts are not counted here).",
+		subjects: ["userId (when the account exists)"],
+		properties: {
+			reason: "bad_credentials | email_unverified",
+			emailHash: "keyed hash of the typed email, to group attempts without storing it",
+		},
+	},
+	"auth.signed_out": {
+		description: "A device session ended at the person's request.",
+		subjects: ["userId"],
+		properties: {},
+	},
+	"auth.password_reset_requested": {
+		description: "A password reset was requested for an existing account.",
+		subjects: ["userId"],
+		properties: { emailSent: "false when the recipient policy skipped the email" },
+	},
+	"auth.password_reset_completed": {
+		description: "The password was reset with an email link; every session was ended.",
+		subjects: ["userId"],
+		properties: {},
+	},
+	"provider.application_submitted": {
+		description: "A provider sent an application with documents.",
+		subjects: ["userId", "providerId", "applicationId"],
+		properties: { jobTypes: "the job types applied for" },
+	},
+	"provider.application_reviewed": {
+		description: "An admin approved or rejected an application.",
+		subjects: ["providerId", "applicationId"],
+		properties: {
+			decision: "approved | rejected",
+			reason: "rejection reason, when rejected",
+			waitedMs: "time since submission",
+		},
+	},
+	"provider.availability_changed": {
+		description: "A provider went available or unavailable (not emitted for location-only updates).",
+		subjects: ["providerId"],
+		properties: {
+			available: "new value",
+			via: "http | websocket | disconnect",
+			jobTypes: "selected job type ids, when sent",
+		},
+	},
+	"booking.created": {
+		description: "A customer created a booking (payment follows).",
+		subjects: ["userId", "bookingId"],
+		properties: {
+			serviceId: "1 public area, 2 room, 3 linen",
+			rate: "hourly rate",
+			hours: "hours",
+			amount: "rate x hours",
+			startDate: "start time",
+			leadTimeMs: "start time minus now",
+		},
+	},
+	"booking.paid": {
+		description: "The booking's payment succeeded (Stripe payment_intent.succeeded, first delivery).",
+		subjects: ["userId", "bookingId", "paymentId"],
+		properties: { amount: "amount paid" },
+	},
+	"booking.accepted": {
+		description: "A provider accepted the booking.",
+		subjects: ["userId", "providerId", "bookingId"],
+		properties: { timeToAcceptMs: "accepted minus created", untilStartMs: "start time minus now" },
+	},
+	"booking.start_requested": {
+		description: "The provider asked the customer to approve the start.",
+		subjects: ["userId", "providerId", "bookingId"],
+		properties: { offsetFromStartMs: "now minus the scheduled start (negative = early)" },
+	},
+	"booking.start_approved": {
+		description: "The customer approved the start request.",
+		subjects: ["userId", "providerId", "bookingId"],
+		properties: { approvalWaitMs: "approved minus requested, when known" },
+	},
+	"booking.started": {
+		description: "The booking moved to in progress (today at the same moment as start_approved).",
+		subjects: ["userId", "providerId", "bookingId"],
+		properties: { offsetFromStartMs: "started minus the scheduled start" },
+	},
+	"booking.completed": {
+		description: "The booking was completed.",
+		subjects: ["userId", "providerId", "bookingId"],
+		properties: { by: "customer | provider", durationMs: "completed minus started", bookedHours: "hours booked" },
+	},
+	"booking.cancelled": {
+		description: "The booking was cancelled by a person.",
+		subjects: ["userId", "providerId (when assigned)", "bookingId"],
+		properties: {
+			by: "customer | provider",
+			reason: "reason text when given",
+			wasAccepted: "a provider had accepted",
+		},
+	},
+	"booking.expired": {
+		description: "Nobody accepted before the start time; the booking was cancelled and refunded.",
+		subjects: ["userId", "bookingId"],
+		properties: {},
+	},
+	"payment.succeeded": {
+		description: "Stripe confirmed the payment.",
+		subjects: ["userId", "bookingId", "paymentId"],
+		properties: { amount: "amount" },
+	},
+	"payment.failed": {
+		description: "Stripe reported a failed payment attempt (payment_intent.payment_failed).",
+		subjects: ["bookingId", "paymentId"],
+		properties: { failureCode: "Stripe error code", declineCode: "card decline code" },
+	},
+	"refund.created": {
+		description: "A refund was requested from Stripe (cancellation or expiry).",
+		subjects: ["bookingId", "paymentId"],
+		properties: { amount: "refund amount" },
+	},
+	"refund.succeeded": {
+		description: "Stripe confirmed the refund.",
+		subjects: ["bookingId", "paymentId"],
+		properties: { amount: "refund amount" },
+	},
+	"refund.failed": {
+		description: "Stripe reported the refund failed or was cancelled.",
+		subjects: ["bookingId", "paymentId"],
+		properties: { status: "failed | cancelled", amount: "refund amount" },
+	},
+	"earning.created": {
+		description: "A provider earning was recorded when a booking completed.",
+		subjects: ["providerId", "bookingId", "earningId"],
+		properties: { amount: "provider share", releaseAt: "when the release task is scheduled" },
+	},
+	"earning.released": {
+		description: "The earning was transferred to the provider's Stripe account.",
+		subjects: ["providerId", "bookingId", "earningId"],
+		properties: { amount: "amount", waitedMs: "released minus created" },
+	},
+	"payout.requested": {
+		description: "A provider asked for a payout and Stripe accepted it.",
+		subjects: ["providerId", "payoutId"],
+		properties: { amount: "amount", status: "Stripe's initial status" },
+	},
+	"payout.paid": {
+		description: "Stripe paid the payout out.",
+		subjects: ["providerId", "payoutId"],
+		properties: { amount: "amount" },
+	},
+	"payout.failed": {
+		description: "Stripe reported the payout failed or was cancelled; the amount went back to the balance.",
+		subjects: ["providerId", "payoutId"],
+		properties: { status: "failed | cancelled", amount: "amount" },
+	},
+	"security.demo_account_blocked": {
+		description: "A shared demo account tried an action that is turned off for it.",
+		subjects: ["userId (when known)"],
+		properties: { action: "route or flow that was blocked" },
+	},
+	"security.rate_limited": {
+		description:
+			"A rate limit refused a request. Sampled: the first per limiter and client per 10 minutes, at most 60 a minute per instance.",
+		subjects: [],
+		properties: {
+			limiter: "limiter name",
+			path: "request path",
+			suppressed: "similar refusals not recorded since the last one",
+		},
+	},
+	"email.sent": {
+		description: "An email was handed to the provider (Resend).",
+		subjects: ["userId (when known)"],
+		properties: {
+			template: "template name",
+			messageId: "provider's message id",
+			recipientDomain: "domain of the recipient",
+		},
+	},
+	"email.skipped": {
+		description: "An email was not sent because the recipient policy blocks the address.",
+		subjects: ["userId (when known)"],
+		properties: {
+			template: "template name",
+			reason: "policy reason",
+			recipientDomain: "domain",
+			recipientHash: "keyed hash of the address",
+		},
+	},
+	"signup.blocked": {
+		description: "Sign-up refused because the address can never receive the verification email.",
+		subjects: [],
+		properties: {
+			reason: "policy reason",
+			role: "customer | provider",
+			recipientDomain: "domain",
+			recipientHash: "keyed hash of the address",
+		},
+	},
+} as const satisfies Record<string, EventTypeDoc>;
+
+export type EventType = keyof typeof EVENT_CATALOGUE;
+
+export const isKnownEventType = (type: string): type is EventType =>
+	Object.prototype.hasOwnProperty.call(EVENT_CATALOGUE, type);

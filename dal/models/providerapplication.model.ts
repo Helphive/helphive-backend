@@ -22,6 +22,17 @@ interface ProviderApplicationModel extends Document {
 		linenPorter: boolean;
 	};
 	rejectReason: string;
+	/** The admin who decided it, and when (set by the decision endpoint; absent on older applications). */
+	reviewedBy?: mongoose.Types.ObjectId | null;
+	reviewedAt?: Date | null;
+	/** Every decision, oldest first. Today an application is decided once; the history allows re-review later. */
+	decisions?: {
+		status: string;
+		at: Date;
+		by: mongoose.Types.ObjectId | null;
+		byEmail: string | null;
+		reason: string | null;
+	}[];
 }
 
 const providerApplicationSchema: Schema = new Schema({
@@ -46,7 +57,27 @@ const providerApplicationSchema: Schema = new Schema({
 		linenPorter: { type: Boolean, default: false },
 	},
 	rejectReason: { type: String, default: "" },
+	reviewedBy: { type: Schema.Types.ObjectId, ref: "Admin", default: null },
+	reviewedAt: { type: Date, default: null },
+	decisions: {
+		type: [
+			{
+				_id: false,
+				status: { type: String, required: true },
+				at: { type: Date, required: true },
+				by: { type: Schema.Types.ObjectId, ref: "Admin", default: null },
+				byEmail: { type: String, default: null },
+				reason: { type: String, default: null },
+			},
+		],
+		default: undefined,
+	},
 });
+
+// Admin lists: the review queue (pending, oldest first) and decided applications by date; lookup by applicant email.
+providerApplicationSchema.index({ status: 1, createdAt: 1 });
+providerApplicationSchema.index({ status: 1, reviewedAt: -1 });
+providerApplicationSchema.index({ email: 1 });
 
 const ProviderApplicationModel: Model<ProviderApplicationModel> = mongoose.model<ProviderApplicationModel>(
 	"ProviderApplication",

@@ -12,6 +12,8 @@ import {
 	clientIpFrom,
 	ipKey,
 } from "../../middleware/rateLimitKeys";
+import { emitEvent } from "../../lib/events";
+import log from "../../lib/logger";
 
 export const PROVIDER_AVAILABILITY_PATH = "/provider-availability";
 
@@ -33,18 +35,48 @@ const stillAuthorized = async (email: string, sessionId: string) => {
 	return !!user && isSessionActive(user, sessionId) && isApprovedProvider(user);
 };
 
+/** Records a change of availability (not location-only updates, which arrive every few seconds). */
+const recordAvailabilityChange = (
+	providerId: unknown,
+	available: boolean,
+	via: "websocket" | "disconnect",
+	jobTypes?: number[],
+) =>
+	emitEvent({
+		type: "provider.availability_changed",
+		actor: {
+			type: via === "disconnect" ? "system" : "provider",
+			id: via === "disconnect" ? undefined : String(providerId),
+		},
+		subjects: { providerId: String(providerId) },
+		properties: { available, via, ...(jobTypes ? { jobTypes } : {}) },
+	});
+
 const saveAvailability = async (email: string, update: AvailabilityUpdate) => {
 	const set: Record<string, unknown> = { isProviderAvailable: update.isProviderAvailable };
 	if (update.currentLocation) set.currentLocation = update.currentLocation;
 	if (update.selectedJobs) set.selectedJobTypes = update.selectedJobs.map((id) => ({ id }));
-	await UserModel.updateOne({ email }, { $set: set }, { runValidators: true }).exec();
+	// Same update as before; the previous value tells whether availability actually changed.
+	const previous = await UserModel.findOneAndUpdate(
+		{ email },
+		{ $set: set },
+		{ runValidators: true, new: false, projection: { _id: 1, isProviderAvailable: 1 } },
+	).exec();
+	if (previous && previous.isProviderAvailable !== update.isProviderAvailable) {
+		recordAvailabilityChange(previous._id, update.isProviderAvailable, "websocket", update.selectedJobs);
+	}
 };
 
 const markOffline = async (email: string) => {
 	try {
-		await UserModel.updateOne({ email }, { $set: { isProviderAvailable: false } }).exec();
+		const previous = await UserModel.findOneAndUpdate(
+			{ email },
+			{ $set: { isProviderAvailable: false } },
+			{ new: false, projection: { _id: 1, isProviderAvailable: 1 } },
+		).exec();
+		if (previous?.isProviderAvailable) recordAvailabilityChange(previous._id, false, "disconnect");
 	} catch (error) {
-		console.error("Error updating provider availability on disconnect:", error);
+		log.error("Error updating provider availability on disconnect", error);
 	}
 };
 
@@ -61,7 +93,7 @@ export const handleProviderAvailabilityWebSocket = (ws: WS) => {
 		},
 		setTimer: (fn, ms) => setTimeout(fn, ms),
 		clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout),
-		log: (message, error) => console.error(message, error),
+		log: (message, error) => log.error(message, error),
 	});
 };
 

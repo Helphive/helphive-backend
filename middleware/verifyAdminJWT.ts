@@ -2,44 +2,50 @@ import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import AdminModel, { Admin } from "../dal/models/admin.model";
 import { JWT_ALGORITHMS } from "../controllers/user-controllers/utils/token.utils";
+import { ADMIN_TOKEN_AUDIENCE, adminTokenSecret } from "../config/adminAuth";
+import { activeSessionFor, signAdminAccessToken } from "../controllers/admin/adminSessions";
+import { setActor } from "../lib/requestContext";
+import log from "../lib/logger";
 
 declare module "express" {
 	interface Request {
 		admin?: Admin;
+		/** The session the access token belongs to; absent for tokens issued before sessions existed. */
+		adminSessionId?: string;
 	}
 }
 
-export const ADMIN_TOKEN_AUDIENCE = "helphive-admin";
-// Short enough that a leaked token is soon useless; the admin app signs in again when its token expires.
-export const ADMIN_TOKEN_TTL = "8h";
+export { ADMIN_TOKEN_AUDIENCE, adminTokenSecret };
 
-/** Admin tokens get their own secret. Until ADMIN_ACCESS_TOKEN_SECRET is set the user secret is used, and the
- * audience claim alone keeps the two kinds of token apart. */
-export const adminTokenSecret = () => process.env.ADMIN_ACCESS_TOKEN_SECRET || process.env.ACCESS_TOKEN_SECRET || "";
+/** An admin who may sign in: not disabled, and holding one of the admin flags (as before roles existed). */
+export const isActiveAdmin = (admin: Pick<Admin, "roles" | "disabled"> | null | undefined) =>
+	!!admin && !admin.disabled && (!!admin.roles?.admin || !!admin.roles?.superAdmin);
 
-export const isActiveAdmin = (admin: Pick<Admin, "roles"> | null | undefined) =>
-	!!admin && (!!admin.roles?.admin || !!admin.roles?.superAdmin);
+/** Access token without a session (kept for callers that predate sessions). */
+export const signAdminToken = (admin: Admin) => signAdminAccessToken(admin).token;
 
-export const signAdminToken = (admin: Admin) =>
-	jwt.sign(
-		{
-			UserInfo: { email: admin.email, roles: Object.values(admin.roles).filter(Boolean) },
-			tv: admin.tokenVersion ?? 0,
-		},
-		adminTokenSecret(),
-		{ expiresIn: ADMIN_TOKEN_TTL, audience: ADMIN_TOKEN_AUDIENCE, algorithm: "HS256" },
-	);
+export type AdminAuthResult =
+	| { ok: true; admin: Admin; sessionId?: string }
+	| { ok: false; status: 401 | 500; message: string };
 
-const unauthorized = (res: Response) => res.status(401).json({ message: "Not authorized" });
+/**
+ * Checks a bearer token: HS256, admin audience, unexpired; the admin exists, is active and the token version matches
+ * (sign out everywhere raises it); and for tokens from a session, the session is still active.
+ */
+export const authenticateAdmin = (req: Request): Promise<AdminAuthResult> => {
+	// Once per request: the demo guard and the route's own check share the result.
+	const cached = req as Request & { adminAuth?: Promise<AdminAuthResult> };
+	cached.adminAuth ??= authenticate(req);
+	return cached.adminAuth;
+};
 
-export const verifyAdminJWT = async (req: Request, res: Response, next: NextFunction) => {
+const authenticate = async (req: Request): Promise<AdminAuthResult> => {
 	const authHeader = req.header("Authorization");
 	if (!authHeader || !authHeader.startsWith("Bearer ")) {
-		return res.status(401).json({ message: "No token, authorization denied" });
+		return { ok: false, status: 401, message: "No token, authorization denied" };
 	}
-
 	const secret = adminTokenSecret();
-	if (!secret) return res.status(500).json({ message: "Server error" });
+	if (!secret) return { ok: false, status: 500, message: "Server error" };
 
 	let decoded: any;
 	try {
@@ -48,25 +54,50 @@ export const verifyAdminJWT = async (req: Request, res: Response, next: NextFunc
 			audience: ADMIN_TOKEN_AUDIENCE,
 		});
 	} catch {
-		return unauthorized(res);
+		return { ok: false, status: 401, message: "Not authorized" };
 	}
 	const email = decoded?.UserInfo?.email;
-	if (typeof email !== "string" || !email || typeof decoded?.tv !== "number") return unauthorized(res);
+	if (typeof email !== "string" || !email || typeof decoded?.tv !== "number") {
+		return { ok: false, status: 401, message: "Not authorized" };
+	}
 
 	try {
 		const admin = await AdminModel.findOne({ email }).exec();
-		// A raised tokenVersion (sign-out everywhere, or a revoked admin) invalidates every earlier token.
-		if (!admin || !isActiveAdmin(admin) || (admin.tokenVersion ?? 0) !== decoded.tv) return unauthorized(res);
-		req.admin = admin;
-		next();
+		if (!admin || !isActiveAdmin(admin) || (admin.tokenVersion ?? 0) !== decoded.tv) {
+			return { ok: false, status: 401, message: "Not authorized" };
+		}
+		if (decoded.sub !== undefined && decoded.sub !== String(admin._id)) {
+			return { ok: false, status: 401, message: "Not authorized" };
+		}
+		if (decoded.sid !== undefined) {
+			if (typeof decoded.sid !== "string" || !(await activeSessionFor(decoded.sid, admin._id, req))) {
+				return { ok: false, status: 401, message: "Not authorized" };
+			}
+			return { ok: true, admin, sessionId: decoded.sid };
+		}
+		return { ok: true, admin };
 	} catch (error) {
-		console.error("Error verifying admin token:", error);
-		return res.status(500).json({ message: "Server error" });
+		log.error("Error verifying admin token", error);
+		return { ok: false, status: 500, message: "Server error" };
 	}
 };
 
-/** After verifyAdminJWT: only a super admin may continue. */
-export const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
-	if (!req.admin?.roles?.superAdmin) return res.status(403).json({ message: "Only a super admin can do this." });
+const accept = (req: Request, result: Extract<AdminAuthResult, { ok: true }>) => {
+	req.admin = result.admin;
+	req.adminSessionId = result.sessionId;
+	setActor("admin", String(result.admin._id), req.context);
+};
+
+export const verifyAdminJWT = async (req: Request, res: Response, next: NextFunction) => {
+	const result = await authenticateAdmin(req);
+	if (!result.ok) return res.status(result.status).json({ message: result.message });
+	accept(req, result);
+	next();
+};
+
+/** Like verifyAdminJWT, but a request without a usable token continues without req.admin (sign-out by cookie). */
+export const optionalAdminJWT = async (req: Request, _res: Response, next: NextFunction) => {
+	const result = await authenticateAdmin(req);
+	if (result.ok) accept(req, result);
 	next();
 };

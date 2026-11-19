@@ -41,6 +41,19 @@ export const RATE_LIMITS = {
 	adminLoginFailuresPerIp: { windowMs: 15 * MINUTE, limit: 10 },
 	adminLoginFailuresPerAccountAndIp: { windowMs: 15 * MINUTE, limit: 5 },
 	adminLoginFailuresPerAccount: { windowMs: HOUR, limit: 100 },
+	// Two-step codes (sign-in challenge, and confirm/disable/regenerate while signed in): failures only. Per admin across
+	// all addresses, 10 per 15 minutes is about 1,000 guesses a day against a 1-in-333,333 chance per guess (three
+	// valid codes in the window): under 0.3% a day, after the password was already right.
+	adminMfaFailuresPerAdmin: { windowMs: 15 * MINUTE, limit: 10 },
+	adminMfaFailuresPerIp: { windowMs: 15 * MINUTE, limit: 20 },
+	// Wrong current password on change-password.
+	adminPasswordChangeFailures: { windowMs: 15 * MINUTE, limit: 5 },
+	// The public demo admin, keyed by client address (many people share the login): requests made with a demo token,
+	// and sign-in attempts to the demo email (successes too, since every visitor signs in).
+	demoAdminRequestsPerIp: { windowMs: 5 * MINUTE, limit: 150 },
+	demoAdminSignInsPerIp: { windowMs: HOUR, limit: 30 },
+	// Admin refresh: once per access-token lifetime per tab; room for several tabs and retries.
+	adminRefreshPerSession: { windowMs: 15 * MINUTE, limit: 60 },
 	// Webhooks and tasks: only rejected (unsigned or unauthorised) calls count, so Stripe and Cloud Tasks never are.
 	webhookFailuresPerIp: { windowMs: 15 * MINUTE, limit: 30 },
 	wsConnectionsPerIp: { windowMs: MINUTE, limit: 30 },
@@ -107,6 +120,25 @@ export const refreshSessionKey = (refreshToken: unknown, ip: string | undefined)
 		}
 	}
 	return ipKey(ip);
+};
+
+/** Admin id inside a two-step challenge token, read without verifying it; only used to bucket the rate limit. */
+export const mfaChallengeKey = (challengeToken: unknown): string | null => {
+	if (typeof challengeToken !== "string") return null;
+	const payload = challengeToken.split(".")[1];
+	if (!payload || payload.length > 2048) return null;
+	try {
+		const sub = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))?.sub;
+		return typeof sub === "string" && /^[a-f\d]{24}$/i.test(sub) ? `mfa-admin:${sub}` : null;
+	} catch {
+		return null;
+	}
+};
+
+/** Session id at the start of an admin refresh token ("<sessionId>.<generation>.<random>.<tag>"), else the IP. */
+export const adminRefreshKey = (token: unknown, ip: string | undefined) => {
+	const sessionId = typeof token === "string" ? token.split(".")[0] : "";
+	return /^[a-f\d]{24}$/i.test(sessionId) ? `admin-session:${sessionId}` : ipKey(ip);
 };
 
 /** Seconds until a window that started at `resetAt - windowMs` ends, never less than 1. */
@@ -189,8 +221,8 @@ export type KnownAddressLookup = "known" | "unknown" | "error";
 
 /**
  * What happens to a sign-in attempt once its account is over the cap: an address that signed in to the account in the
- * last 30 days goes through; a new one gets 429. A failed lookup (MongoDB unreachable) lets it through, as every other
- * shared limiter fails open.
+ * last 30 days goes through; a new one gets 429, and so does one whose lookup failed or timed out (fail closed: the
+ * counter has already shown the account is under attack). Only an unavailable counter store fails open, upstream.
  */
 export const accountCapDecision = (lookup: KnownAddressLookup): "allow" | "block" =>
-	lookup === "unknown" ? "block" : "allow";
+	lookup === "known" ? "allow" : "block";

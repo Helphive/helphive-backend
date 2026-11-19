@@ -12,6 +12,8 @@ import { resolveBookingStart } from "./utils/bookingStart.utils";
 import { COUNTERPARTY_SELECT, withCounterparties } from "./utils/counterparty.utils";
 import { serializePayment } from "./utils/payment.utils";
 import { publicValidationErrors } from "../../middleware/sanitizeInput";
+import { emitEvent } from "../../lib/events";
+import log from "../../lib/logger";
 
 declare module "express" {
 	interface Request {
@@ -68,6 +70,22 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 			createdAt: new Date(),
 		});
 		await newBooking.save();
+		emitEvent(
+			{
+				type: "booking.created",
+				actor: { type: "user", id: user._id },
+				subjects: { userId: user._id, bookingId: newBooking._id },
+				properties: {
+					serviceId: newBooking.service.id,
+					rate: newBooking.rate,
+					hours: newBooking.hours,
+					amount: newBooking.rate * newBooking.hours,
+					startDate: newBooking.startDate,
+					leadTimeMs: newBooking.startDate.getTime() - now.getTime(),
+				},
+			},
+			req,
+		);
 
 		await createGoogleCloudTaskBookingExpiredTrigger(
 			String(newBooking._id),
@@ -77,7 +95,7 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 		req.bookingId = String(newBooking._id);
 		next();
 	} catch (error) {
-		console.error("Error handling create booking:", error);
+		log.error("Error handling create booking", error);
 		res.status(500).json({
 			message: "An error occurred while processing the request.",
 		});
@@ -142,7 +160,7 @@ export const handleCreatePaymentIntent = async (req: Request, res: Response) => 
 			clientSecret: paymentIntent.client_secret,
 		});
 	} catch (error) {
-		console.error("Error handling create payment intent:", error);
+		log.error("Error handling create payment intent", error);
 		res.status(500).json({
 			message: "An error occurred while processing the request.",
 		});
@@ -199,7 +217,7 @@ export const handleGetUserBookings = async (req: any, res: Response) => {
 
 		res.status(200).json({ history, active, scheduled });
 	} catch (error) {
-		console.error("Error fetching user bookings:", error);
+		log.error("Error fetching user bookings", error);
 		res.status(500).json({
 			message: "An error occurred while fetching bookings.",
 		});
@@ -240,7 +258,7 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 			payment: serializePayment(payment, { includeClientSecret: true }),
 		});
 	} catch (error) {
-		console.error("Error getting booking by id:", error);
+		log.error("Error getting booking by id", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -269,20 +287,44 @@ export const handleApproveStartJobRequest = async (req: Request, res: Response) 
 			return res.status(403).json({ message: "User not authorized to approve this booking." });
 		}
 
+		const startedAt = new Date();
 		const started = await BookingModel.findOneAndUpdate(
 			{ _id: booking._id, status: "pending", userApprovalRequested: true, providerId: booking.providerId },
-			{ $set: { status: "in progress", startedAt: new Date() } },
+			{ $set: { status: "in progress", startedAt } },
 			{ new: true },
 		).exec();
 		if (!started) {
 			return res.status(404).json({ message: "Booking not found or not pending." });
 		}
+		const subjects = { userId: started.userId, providerId: started.providerId, bookingId: started._id };
+		emitEvent(
+			{
+				type: "booking.start_approved",
+				actor: { type: "user", id: user._id },
+				subjects,
+				properties: {
+					approvalWaitMs: started.startRequestedAt
+						? startedAt.getTime() - started.startRequestedAt.getTime()
+						: null,
+				},
+			},
+			req,
+		);
+		emitEvent(
+			{
+				type: "booking.started",
+				actor: { type: "user", id: user._id },
+				subjects,
+				properties: { offsetFromStartMs: startedAt.getTime() - started.startDate.getTime() },
+			},
+			req,
+		);
 
 		await sendBookingStartApprovedNotification(booking.providerId.toString(), started);
 
 		res.status(200).json({ message: "Booking has been started." });
 	} catch (error) {
-		console.error("Error approving start job request:", error);
+		log.error("Error approving start job request", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});

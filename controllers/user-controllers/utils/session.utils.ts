@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import UserModel from "../../../dal/models/user.model";
+import { getRequestContext, type RequestContext } from "../../../lib/requestContext";
 
 const accessTokenKey = process.env.ACCESS_TOKEN_SECRET || "";
 const refreshTokenKey = process.env.REFRESH_TOKEN_SECRET || "";
@@ -31,6 +32,18 @@ export const toPublicUser = (user: UserDoc) => {
 	return rest;
 };
 
+/** Device details for a session record, from the current request. Only fields the request actually had. */
+export const sessionDeviceFields = (context: RequestContext | undefined = getRequestContext()) =>
+	Object.fromEntries(
+		Object.entries({
+			lastIp: context?.ip,
+			userAgent: context?.userAgent,
+			platform: context?.platform,
+			appVersion: context?.appVersion,
+			deviceId: context?.deviceId,
+		}).filter(([, value]) => value !== undefined),
+	) as Partial<Record<"lastIp" | "userAgent" | "platform" | "appVersion" | "deviceId", string>>;
+
 export const isSessionActive = (user: UserDoc, sessionId: string) =>
 	user.sessionId === sessionId || user.sessions.some((session) => session.sessionId === sessionId);
 
@@ -38,8 +51,9 @@ export const isSessionActive = (user: UserDoc, sessionId: string) =>
 export const createSession = async (user: UserDoc) => {
 	const sessionId = new mongoose.Types.ObjectId().toString();
 	const tokens = signTokens(user, sessionId);
+	const now = new Date();
 	user.sessions = [
-		{ sessionId, refreshTokens: [tokens.refreshToken], lastUsedAt: new Date() },
+		{ sessionId, refreshTokens: [tokens.refreshToken], lastUsedAt: now, createdAt: now, ...sessionDeviceFields() },
 		...[...user.sessions].sort((a, b) => +new Date(b.lastUsedAt) - +new Date(a.lastUsedAt)),
 	].slice(0, MAX_SESSIONS);
 	await user.save();
@@ -84,8 +98,12 @@ export const refreshSession = async (presentedToken: string): Promise<RefreshRes
 		return { ok: false, status: 403, message: "Session has ended. Please sign in again." };
 	}
 
-	// Atomic push, so two refreshes racing on the same session both keep their new token.
+	// Atomic push, so two refreshes racing on the same session both keep their new token. Device details are
+	// refreshed from this request (only those it sent; the token format is unchanged).
 	const tokens = signTokens(user, sessionId);
+	const device = Object.fromEntries(
+		Object.entries(sessionDeviceFields()).map(([field, value]) => [`sessions.$.${field}`, value]),
+	);
 	await UserModel.updateOne(
 		{ _id: user._id, "sessions.sessionId": sessionId },
 		{
@@ -96,14 +114,17 @@ export const refreshSession = async (presentedToken: string): Promise<RefreshRes
 					$slice: TOKENS_KEPT_PER_SESSION,
 				},
 			},
-			$set: { "sessions.$.lastUsedAt": new Date() },
+			$set: { "sessions.$.lastUsedAt": new Date(), ...device },
 		},
 	).exec();
 	return { ok: true, user, ...tokens };
 };
 
-/** Ends only the session the token belongs to. The token must carry our signature; an expired one still works. */
-export const endSession = async (presentedToken: string) => {
+/**
+ * Ends only the session the token belongs to. The token must carry our signature; an expired one still works.
+ * Returns the user whose session ended, or null.
+ */
+export const endSession = async (presentedToken: string): Promise<UserDoc | null> => {
 	let decoded: RefreshPayload | null;
 	try {
 		decoded = jwt.verify(presentedToken, refreshTokenKey, {
@@ -111,20 +132,21 @@ export const endSession = async (presentedToken: string) => {
 			ignoreExpiration: true,
 		}) as RefreshPayload;
 	} catch {
-		return;
+		return null;
 	}
 	const sessionId = decoded?.UserInfo?.sessionId;
 	const user =
 		typeof sessionId === "string" && sessionId
 			? await UserModel.findOne({ $or: [{ "sessions.sessionId": sessionId }, { refreshToken: presentedToken }] })
 			: await UserModel.findOne({ refreshToken: presentedToken });
-	if (!user) return;
+	if (!user) return null;
 	user.sessions = user.sessions.filter((s) => s.sessionId !== sessionId);
 	if (user.refreshToken.includes(presentedToken)) {
 		user.refreshToken = [];
 		user.sessionId = "";
 	}
 	await user.save();
+	return user;
 };
 
 /** Signs the user out on every device (the caller saves). Access tokens stop working at their next request. */

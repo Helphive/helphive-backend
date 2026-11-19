@@ -9,8 +9,12 @@ import connectDB from "./config/dbConn";
 import corsOptions from "./config/corsOptions";
 
 import { SERVER_BASE_URL } from "./config/config";
-import { logger } from "./middleware/logEvents";
+import { requestContext, bindRequestContext } from "./middleware/requestContext";
 import { credentials } from "./middleware/credentials";
+import { configureIndexing, reportIndexBuilds } from "./config/indexes";
+import { handleHealthz, handleReadyz } from "./controllers/health.controller";
+import { warmEmailPolicy } from "./lib/emailPolicy";
+import log from "./lib/logger";
 import { errorHandler } from "./middleware/errorHandler";
 import { globalLimiter } from "./middleware/rateLimit";
 import { rejectOperatorKeys } from "./middleware/sanitizeInput";
@@ -41,8 +45,13 @@ if (
 	throw `Abort: You need to define variables in the .env file.`;
 }
 
-for (const name of ["STRIPE_CONNECTED_WEBHOOK_SECRET", "GOOGLE_CLOUD_TASKS_SECRET", "ADMIN_ACCESS_TOKEN_SECRET"]) {
-	if (!process.env[name]) console.warn(`${name} is not set; see the security notes in .env.example.`);
+for (const name of [
+	"STRIPE_CONNECTED_WEBHOOK_SECRET",
+	"GOOGLE_CLOUD_TASKS_SECRET",
+	"ADMIN_ACCESS_TOKEN_SECRET",
+	"ADMIN_MFA_ENCRYPTION_KEY",
+]) {
+	if (!process.env[name]) log.warn(`${name} is not set; see the notes in .env.example.`);
 }
 
 // Cloud Run sits behind one Google front end hop, which appends the real client address to X-Forwarded-For.
@@ -57,10 +66,13 @@ app.set("trust proxy", trustProxyHops);
 app.disable("x-powered-by");
 
 const server = app.listen(PORT, () => {
-	console.log(`Server is running at ${SERVER_BASE_URL}`);
+	log.info(`Server is running at ${SERVER_BASE_URL}`);
 });
 
+configureIndexing();
 connectDB();
+// Load the disposable-domain list now rather than on the first sign-up.
+warmEmailPolicy();
 
 app.use(
 	helmet({
@@ -85,7 +97,11 @@ app.use(
 		referrerPolicy: { policy: "no-referrer" },
 	}),
 );
-app.use(logger);
+// Request id, client details and the access log come first, so every response (even an error) carries X-Request-Id.
+app.use(requestContext);
+// Probes: no CORS, rate limit or body parsing, and logged only when they fail.
+app.get("/healthz", handleHealthz);
+app.get("/readyz", handleReadyz);
 app.use(credentials);
 app.use(cors(corsOptions));
 app.use(globalLimiter);
@@ -95,6 +111,8 @@ app.use("/webhook", webhookRoute);
 
 app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
+// Body parsers resume the chain from stream callbacks; re-enter the request context for everything after them.
+app.use(bindRequestContext);
 app.use(rejectOperatorKeys);
 
 app.use(
@@ -135,7 +153,8 @@ app.all("*", (req: Request, res: Response) => {
 app.use(errorHandler);
 
 mongoose.connection.once("open", () => {
-	console.log("Connected to MongoDB");
+	log.info("Connected to MongoDB");
+	reportIndexBuilds();
 });
 
 server.on("upgrade", createProviderAvailabilityUpgradeHandler(trustProxyHops));

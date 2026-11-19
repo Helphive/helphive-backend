@@ -6,6 +6,8 @@ import {
 } from "../../controllers/webhook-controllers/cloudtasks.controller";
 import { safeEqual } from "../../controllers/user-controllers/utils/token.utils";
 import { webhookLimiter } from "../../middleware/rateLimit";
+import { recordTaskRun } from "../../lib/webhookRecorder";
+import log from "../../lib/logger";
 
 const cloudTasksRoute = express.Router();
 
@@ -19,7 +21,7 @@ const MIN_SECRET_LENGTH = 16;
 const verifyHeader = (req: Request, res: Response, next: NextFunction) => {
 	const secret = process.env.GOOGLE_CLOUD_TASKS_SECRET || "";
 	if (secret.length < MIN_SECRET_LENGTH) {
-		console.error("GOOGLE_CLOUD_TASKS_SECRET is missing or too short; refusing Cloud Tasks calls.");
+		log.error("GOOGLE_CLOUD_TASKS_SECRET is missing or too short; refusing Cloud Tasks calls.");
 		return res.status(401).json({ message: "Unauthorized" });
 	}
 	const header = req.headers.authorization;
@@ -32,7 +34,20 @@ const verifyHeader = (req: Request, res: Response, next: NextFunction) => {
 
 const tasksLimiter = webhookLimiter("cloud-tasks-rejected", 401);
 
-cloudTasksRoute.post("/earning-complete", tasksLimiter, verifyHeader, handleGoogleCloudTasksEarningComplete);
-cloudTasksRoute.post("/booking-expired", tasksLimiter, verifyHeader, handleGoogleCloudTasksBookingExpired);
+// Every call is recorded in taskruns (including refused ones), before the limiter so a 429 is recorded too.
+cloudTasksRoute.post(
+	"/earning-complete",
+	recordTaskRun("earning-complete"),
+	tasksLimiter,
+	verifyHeader,
+	handleGoogleCloudTasksEarningComplete,
+);
+cloudTasksRoute.post(
+	"/booking-expired",
+	recordTaskRun("booking-expired"),
+	tasksLimiter,
+	verifyHeader,
+	handleGoogleCloudTasksBookingExpired,
+);
 
 export default cloudTasksRoute;

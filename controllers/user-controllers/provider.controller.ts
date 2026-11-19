@@ -21,6 +21,8 @@ import PayoutModel from "../../dal/models/payout.model";
 import { sendCometChatMessage } from "./utils/cometchat.util";
 import { publicValidationErrors } from "../../middleware/sanitizeInput";
 import { storedFileInfo } from "../../middleware/uploads";
+import { emitEvent } from "../../lib/events";
+import log from "../../lib/logger";
 
 const APPLICATION_FIELDS = ["firstName", "lastName", "email", "phone", "country", "state", "city", "street"] as const;
 const JOB_TYPE_KEYS = ["publicAreaAttendant", "roomAttendant", "linenPorter"] as const;
@@ -113,10 +115,19 @@ export const handleRequestProviderAccount = async (req: Request, res: Response) 
 		user.providerApplications.push(providerAccountRequest._id as any);
 		user.providerStatus = "pending";
 		await user.save();
+		emitEvent(
+			{
+				type: "provider.application_submitted",
+				actor: { type: "provider", id: user._id },
+				subjects: { userId: user._id, providerId: user._id, applicationId: providerAccountRequest._id },
+				properties: { jobTypes },
+			},
+			req,
+		);
 
 		res.status(200).json({ message: "Files uploaded successfully." });
 	} catch (error) {
-		console.error("Error handling file upload:", error);
+		log.error("Error handling file upload", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -134,9 +145,28 @@ export const handleUpdateProviderAvailability = async (req: Request, res: Respon
 		if (currentLocation) update.currentLocation = currentLocation;
 		if (selectedJobTypes) update.selectedJobTypes = selectedJobTypes.map((id: number) => ({ id: Number(id) }));
 
-		const user = await UserModel.findOneAndUpdate({ email: req.user }, { $set: update }, { new: true }).exec();
+		const previous = await UserModel.findOneAndUpdate({ email: req.user }, { $set: update }, { new: false }).exec();
+		if (!previous) {
+			return res.status(404).json({ message: "User not found." });
+		}
+		const user = await UserModel.findById(previous._id).exec();
 		if (!user) {
 			return res.status(404).json({ message: "User not found." });
+		}
+		if (previous.isProviderAvailable !== user.isProviderAvailable) {
+			emitEvent(
+				{
+					type: "provider.availability_changed",
+					actor: { type: "provider", id: user._id },
+					subjects: { providerId: user._id },
+					properties: {
+						available: user.isProviderAvailable,
+						via: "http",
+						...(selectedJobTypes ? { jobTypes: user.selectedJobTypes.map((job) => job.id) } : {}),
+					},
+				},
+				req,
+			);
 		}
 		res.status(200).json({
 			isProviderAvailable: user.isProviderAvailable,
@@ -144,7 +174,7 @@ export const handleUpdateProviderAvailability = async (req: Request, res: Respon
 			selectedJobTypes: user.selectedJobTypes.map((job) => job.id),
 		});
 	} catch (error) {
-		console.error("Error updating provider availability:", error);
+		log.error("Error updating provider availability", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -160,7 +190,7 @@ export const handleAccountApprovalScreen = async (req: Request, res: Response) =
 		await user?.save();
 		res.status(200).json({ message: "Account approval screen set." });
 	} catch (error) {
-		console.error("Error approving account:", error);
+		log.error("Error approving account", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -203,7 +233,7 @@ export const handleGetBookings = async (req: Request, res: Response) => {
 			paidBookings: paidBookings.map((booking) => withCounterparties(withDisplayStatus(booking))),
 		});
 	} catch (error) {
-		console.error("Error getting bookings:", error);
+		log.error("Error getting bookings", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -250,7 +280,7 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 			payment: serializePayment(payment, { includeClientSecret: false }),
 		});
 	} catch (error) {
-		console.error("Error getting booking by id:", error);
+		log.error("Error getting booking by id", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -310,21 +340,34 @@ export const handleAcceptBooking = async (req: Request, res: Response) => {
 		}
 
 		// Only one provider can win: the update matches only while the booking is still unassigned.
+		const acceptedAt = new Date();
 		const accepted = await BookingModel.findOneAndUpdate(
 			{ _id: booking._id, status: "pending", providerId: null },
-			{ $set: { providerId: user._id } },
+			{ $set: { providerId: user._id, acceptedAt } },
 			{ new: true },
 		).exec();
 		if (!accepted) {
 			return res.status(409).json({ message: "Booking has already been accepted by another provider." });
 		}
+		emitEvent(
+			{
+				type: "booking.accepted",
+				actor: { type: "provider", id: user._id },
+				subjects: { userId: accepted.userId, providerId: user._id, bookingId: accepted._id },
+				properties: {
+					timeToAcceptMs: acceptedAt.getTime() - new Date(accepted.createdAt).getTime(),
+					untilStartMs: accepted.startDate.getTime() - acceptedAt.getTime(),
+				},
+			},
+			req,
+		);
 
 		await sendBookingAcceptedNotification(booking.userId.toString(), user.firstName, accepted);
 		await sendCometChatMessage(booking.userId.toString(), String(user._id));
 
 		res.status(200).json({ message: "Booking accepted successfully." });
 	} catch (error) {
-		console.error("Error accepting booking:", error);
+		log.error("Error accepting booking", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -346,7 +389,7 @@ export const handleMyOrders = async (req: Request, res: Response) => {
 		const bookings = await BookingModel.find({ providerId: user._id }).sort({ startDate: 1 });
 		res.status(200).json(bookings.map(withDisplayStatus));
 	} catch (error) {
-		console.error("Error accepting booking:", error);
+		log.error("Error accepting booking", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -385,14 +428,25 @@ export const handleStartBooking = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "Only an accepted booking that has not started can be started." });
 		}
 
+		const requestedAt = new Date();
 		booking.userApprovalRequested = true;
+		booking.startRequestedAt = requestedAt;
 		await booking.save();
+		emitEvent(
+			{
+				type: "booking.start_requested",
+				actor: { type: "provider", id: user._id },
+				subjects: { userId: booking.userId, providerId: user._id, bookingId: booking._id },
+				properties: { offsetFromStartMs: requestedAt.getTime() - booking.startDate.getTime() },
+			},
+			req,
+		);
 
 		await sendBookingStartedNotification(booking.userId.toString(), booking);
 
 		res.status(200).json({ message: "Booking started successfully." });
 	} catch (error) {
-		console.error("Error starting booking:", error);
+		log.error("Error starting booking", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -440,7 +494,7 @@ export const handleGetStripeConnectedAccount = async (req: Request, res: Respons
 
 		return res.status(200).json({ connectedAccountOnboardingLink });
 	} catch (error) {
-		console.error("Error handling Stripe connected account:", error);
+		log.error("Error handling Stripe connected account", error);
 		return res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -468,7 +522,7 @@ export const handleGetEarnings = async (req: Request, res: Response) => {
 		const availableBalance = user.availableBalance || 0;
 		return res.status(200).json({ availableBalance, earnings, payouts });
 	} catch (error) {
-		console.error("Error getting provider earnings:", error);
+		log.error("Error getting provider earnings", error);
 		return res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -547,7 +601,7 @@ export const handleCreatePayout = async (req: Request, res: Response) => {
 				};
 			}
 		} catch (error) {
-			console.error("Error reading payout destination:", error);
+			log.error("Error reading payout destination", error);
 		}
 
 		const payoutRecord = await PayoutModel.create({
@@ -561,16 +615,26 @@ export const handleCreatePayout = async (req: Request, res: Response) => {
 			destinationDetails: destinationInfo,
 		});
 
+		emitEvent(
+			{
+				type: "payout.requested",
+				actor: { type: "provider", id: user._id },
+				subjects: { providerId: user._id, payoutId: payoutRecord._id },
+				properties: { amount, status: payout.status },
+			},
+			req,
+		);
+
 		return res.status(200).json({
 			success: true,
 			payout: payoutRecord,
 		});
 	} catch (error: any) {
-		console.error("Error creating payout:", error);
+		log.error("Error creating payout", error);
 		if (reservedFor) {
 			// Stripe did not create the payout; give the reserved amount back.
 			await UserModel.updateOne({ _id: reservedFor }, { $inc: { availableBalance: amount } }).catch((err) =>
-				console.error("Error restoring balance after a failed payout:", err),
+				log.error("Error restoring balance after a failed payout", err),
 			);
 		}
 
@@ -603,7 +667,7 @@ export const handleGetStripeExpressLoginLink = async (req: Request, res: Respons
 		const loginLink = await stripe.accounts.createLoginLink(user.stripeConnectedAccountId);
 		return res.status(200).json({ loginLink });
 	} catch (error) {
-		console.error("Error getting Stripe express login link:", error);
+		log.error("Error getting Stripe express login link", error);
 		return res.status(500).json({ message: "Internal server error" });
 	}
 };

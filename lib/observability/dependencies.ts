@@ -81,7 +81,7 @@ export const DEPENDENCIES: { name: string; label: string; enabled: () => boolean
 	{
 		name: "cometchat",
 		label: "CometChat",
-		enabled: () => configured("COMET_CHAT_REST_API_KEY"),
+		enabled: () => configured("COMETCHAT_REST_API_KEY") || configured("COMET_CHAT_REST_API_KEY"),
 		probe: async () => {
 			await axios.get(`${COMET_CHAT_BASE_URL}/users`, {
 				params: { perPage: 1 },
@@ -132,7 +132,7 @@ export const DEPENDENCIES: { name: string; label: string; enabled: () => boolean
 	{
 		name: "google-maps",
 		label: "Google Maps",
-		enabled: () => configured("GOOGLE_MAPS_API_KEY"),
+		enabled: () => configured("GOOGLE_MAPS_SERVER_API_KEY") || configured("GOOGLE_MAPS_API_KEY"),
 		probe: async () => {
 			const { data } = await axios.get("https://maps.googleapis.com/maps/api/geocode/json", {
 				params: {

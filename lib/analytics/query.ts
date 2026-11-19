@@ -39,7 +39,8 @@ export const takeStrings = (query: Record<string, unknown>, allowed: readonly st
 	for (const [name, value] of Object.entries(query ?? {})) {
 		if (!allowed.includes(name)) throw new AnalyticsQueryError(`Unknown parameter ${name.slice(0, 40)}.`, name);
 		if (typeof value !== "string") throw new AnalyticsQueryError(`${name} must be given once, as text.`, name);
-		if (value.length > 100 || CONTROL.test(value))
+		// Most values are short; a metrics list carries up to MAX_SUMMARY_METRICS names.
+		if (value.length > (name === "metrics" ? 800 : 100) || CONTROL.test(value))
 			throw new AnalyticsQueryError(`${name} is not a valid value.`, name);
 		out[name] = value;
 	}

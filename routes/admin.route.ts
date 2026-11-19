@@ -55,6 +55,7 @@ import { audited } from "../middleware/audited";
 import { registerOperationsRoutes } from "./adminOperations.route";
 import { registerAnalyticsRoutes } from "./adminAnalytics.route";
 import { registerRiskRoutes } from "./adminRisk.route";
+import { registerFinanceRoutes } from "./adminFinance.route";
 import { requirePermission } from "../middleware/requirePermission";
 import {
 	demoAdminRequestLimiter,
@@ -215,5 +216,7 @@ registerOperationsRoutes(adminRoute);
 registerAnalyticsRoutes(adminRoute);
 // Fraud and risk (routes/adminRisk.route.ts).
 registerRiskRoutes(adminRoute);
+// Finance, support and platform: reconciliation, disputes, settings, cases, notifications (routes/adminFinance.route.ts).
+registerFinanceRoutes(adminRoute);
 
 export default adminRoute;

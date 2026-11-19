@@ -28,6 +28,8 @@ export const PERMISSIONS = {
 	"audit.read": "The admin audit log.",
 	"operations.read": "The operations overview, the live view and the global search.",
 	"notes.manage": "Add, edit and delete admin notes on users, bookings, payments and applications.",
+	"finance.manage": "Run reconciliations with Stripe and mark mismatches explained.",
+	"notifications.send": "Send announcements to customers and providers by push and email, and manage templates.",
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -66,6 +68,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
 		"audit.read",
 		"operations.read",
 		"notes.manage",
+		"notifications.send",
 	],
 	finance: [
 		"account.self",
@@ -78,6 +81,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
 		"audit.read",
 		"operations.read",
 		"notes.manage",
+		"finance.manage",
 	],
 	support: [
 		"account.self",
@@ -89,6 +93,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
 		"support.manage",
 		"operations.read",
 		"notes.manage",
+		"notifications.send",
 	],
 	// Read-only: every permission except account.self ends in ".read".
 	analyst: [

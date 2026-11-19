@@ -13,6 +13,7 @@ import { COUNTERPARTY_SELECT, withCounterparties } from "./utils/counterparty.ut
 import { serializePayment } from "./utils/payment.utils";
 import { publicValidationErrors } from "../../middleware/sanitizeInput";
 import { emitEvent } from "../../lib/events";
+import { bookingExpiryAt, checkLeadTime, checkServiceOffered, getSettings } from "../../lib/settings";
 import log from "../../lib/logger";
 
 declare module "express" {
@@ -51,10 +52,15 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 			return res.status(400).json({ message: "Start date and time are not valid." });
 		}
 
-		const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
-
-		if (combinedDate < oneHourFromNow) {
-			return res.status(400).json({ message: "Start date and time must be at least 1 hour in the future." });
+		// Platform settings (lib/settings.ts); the defaults are the previous 1-hour lead time and all services offered.
+		const settings = await getSettings();
+		const tooSoon = checkLeadTime(combinedDate, now, settings["bookings.minLeadTimeMinutes"]);
+		if (tooSoon) {
+			return res.status(400).json({ message: tooSoon });
+		}
+		const notOffered = checkServiceOffered(service, settings["services.catalogue"]);
+		if (notOffered) {
+			return res.status(400).json({ message: notOffered });
 		}
 
 		const newBooking = new BookingModel({
@@ -92,7 +98,7 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 
 		await createGoogleCloudTaskBookingExpiredTrigger(
 			String(newBooking._id),
-			new Date(newBooking.startDate.getTime()),
+			bookingExpiryAt(newBooking.startDate, settings["bookings.expiryMinutesBeforeStart"]),
 		);
 
 		req.bookingId = String(newBooking._id);

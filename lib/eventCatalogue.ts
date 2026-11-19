@@ -376,6 +376,99 @@ export const EVENT_CATALOGUE = {
 			suppressed: "similar refusals not recorded since the last one",
 		},
 	},
+	"dispute.created": {
+		description:
+			"A customer's bank opened a card dispute (chargeback) on a payment (Stripe charge.dispute.created).",
+		subjects: ["userId", "providerId", "bookingId", "paymentId (when the payment is known)"],
+		properties: {
+			disputeId: "Stripe dispute id",
+			amount: "disputed amount",
+			reason: "Stripe reason code",
+			status: "status",
+			evidenceDueBy: "deadline to respond",
+		},
+	},
+	"dispute.updated": {
+		description: "A dispute's status or details changed.",
+		subjects: ["userId", "providerId", "bookingId", "paymentId"],
+		properties: { disputeId: "Stripe dispute id", amount: "amount", reason: "reason", status: "new status" },
+	},
+	"dispute.funds_withdrawn": {
+		description: "Stripe took the disputed amount (and fee) from the platform balance.",
+		subjects: ["userId", "providerId", "bookingId", "paymentId"],
+		properties: { disputeId: "Stripe dispute id", amount: "amount", reason: "reason", status: "status" },
+	},
+	"dispute.funds_reinstated": {
+		description: "Stripe returned the disputed funds to the platform balance.",
+		subjects: ["userId", "providerId", "bookingId", "paymentId"],
+		properties: { disputeId: "Stripe dispute id", amount: "amount", reason: "reason", status: "status" },
+	},
+	"dispute.closed": {
+		description: "The dispute ended: won, lost, or a warning closed.",
+		subjects: ["userId", "providerId", "bookingId", "paymentId"],
+		properties: {
+			disputeId: "Stripe dispute id",
+			amount: "amount",
+			reason: "reason",
+			status: "status",
+			outcome: "won | lost | warning_closed",
+		},
+	},
+	"finance.reconciliation_completed": {
+		description: "An admin ran a reconciliation with Stripe.",
+		subjects: [],
+		properties: {
+			runId: "run id",
+			status: "completed | partial",
+			from: "range start",
+			to: "range end",
+			mismatches: "count",
+			byType: "count per mismatch type",
+		},
+	},
+	"settings.changed": {
+		description: "An admin changed a platform setting.",
+		subjects: [],
+		properties: { key: "setting key", before: "previous value", after: "new value" },
+	},
+	"support.case_opened": {
+		description: "A support case was opened.",
+		subjects: ["userId | bookingId | paymentId (what the case is about)"],
+		properties: {
+			caseId: "case id",
+			reference: "case reference",
+			category: "category",
+			source: "admin | customer | provider",
+		},
+	},
+	"support.case_updated": {
+		description: "A support case's status, priority, category or assignee changed, or a note or action was added.",
+		subjects: ["userId | bookingId | paymentId"],
+		properties: { caseId: "case id", changes: "names of the fields changed", status: "status after" },
+	},
+	"support.case_message_sent": {
+		description: "An admin emailed a party from a support case.",
+		subjects: ["userId (the recipient)", "bookingId"],
+		properties: { caseId: "case id", to: "customer | provider", result: "sent | skipped | failed" },
+	},
+	"support.case_resolved": {
+		description: "A support case was resolved.",
+		subjects: ["userId | bookingId | paymentId"],
+		properties: { caseId: "case id", outcome: "resolution outcome", openForMs: "time since opened" },
+	},
+	"notification.campaign_sent": {
+		description: "An admin sent an announcement to a segment.",
+		subjects: [],
+		properties: {
+			campaignId: "campaign id",
+			segment: "segment type",
+			channels: "push | email",
+			targeted: "recipients",
+			pushSent: "push recipients",
+			emailSent: "emails sent",
+			emailSkipped: "emails the policy skipped",
+		},
+	},
 	"email.sent": {
 		description: "An email was handed to the provider (Resend).",
 		subjects: ["userId (when known)"],

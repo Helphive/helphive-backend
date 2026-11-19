@@ -36,6 +36,7 @@ import {
 
 import { verifyJWT } from "../../middleware/verifyJWT";
 import { verifyRoles } from "../../middleware/verfiyRoles";
+import { blockDemoAccounts } from "../../middleware/blockDemoAccounts";
 
 const authRoute = express.Router();
 const upload = multer();
@@ -57,6 +58,7 @@ authRoute.post(
 	"/profile",
 	verifyJWT,
 	verifyRoles("User", "Provider"),
+	blockDemoAccounts,
 	upload.fields([{ name: "profile", maxCount: 1 }]),
 	validateUpdateProfileFields,
 	handleUpdateProfile,

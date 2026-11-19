@@ -5,6 +5,7 @@ import NotionMagicLinkEmail from "../emails/verificationEmail";
 import NotionResetPasswordEmail from "../emails/resetPasswordEmail";
 import UserModel from "../dal/models/user.model";
 import { CLIENT_BASE_URL, VERIFICATION_EMAIL } from "../config/config";
+import { isDemoAccountEmail } from "../config/demoAccounts";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const resendAudienceId = process.env.RESEND_AUDIENCE_ID || "";
@@ -72,6 +73,10 @@ export const sendResetPasswordEmail = async (req: Request, res: Response) => {
 	const { email } = req.body;
 	if (!email) {
 		return res.status(400).json({ message: "Email is required" });
+	}
+	// Same success response as a real request, but no token is stored and no email goes out.
+	if (isDemoAccountEmail(email)) {
+		return res.status(201).json({ message: "Verification email sent" });
 	}
 	try {
 		const user = await UserModel.findOne({ email });

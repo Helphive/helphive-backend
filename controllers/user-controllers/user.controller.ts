@@ -8,6 +8,7 @@ import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
 import { createGoogleCloudTaskBookingExpiredTrigger, sendBookingStartApprovedNotification } from "./utils/user.utils";
 import { SAFE_USER_SELECT, isValidObjectId, withDisplayStatus } from "./utils/booking.utils";
+import { resolveBookingStart } from "./utils/bookingStart.utils";
 
 declare module "express" {
 	interface Request {
@@ -30,7 +31,7 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 	}
 
 	try {
-		const { service, rate, startDate, startTime, hours, address, latitude, longitude } = req.body;
+		const { service, rate, startAt, startDate, startTime, hours, address, latitude, longitude } = req.body;
 
 		const userEmail = req.user;
 
@@ -40,16 +41,12 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 			return res.status(404).json({ message: "User not found." });
 		}
 
-		let dateParts = startDate.split("T")[0].split("-");
-		if (startDate < startTime) {
-			dateParts = startTime.split("T")[0].split("-");
-		}
-		const timeParts = startTime.split("T")[1].split(".")[0];
-		const combinedDateString = `${dateParts[0]}-${dateParts[1]}-${dateParts[2]}T${timeParts}`;
-
-		const combinedDate = new Date(combinedDateString + "Z");
-
 		const now = new Date();
+		const combinedDate = resolveBookingStart({ startAt, startDate, startTime }, now);
+		if (!combinedDate) {
+			return res.status(400).json({ message: "Start date and time are not valid." });
+		}
+
 		const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
 
 		if (combinedDate < oneHourFromNow) {

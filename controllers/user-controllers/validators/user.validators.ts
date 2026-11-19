@@ -16,6 +16,7 @@ export const validateCreateBookingFields = [
 		.withMessage("Hours must be between 1 and 1000"),
 	body("startDate").isISO8601().notEmpty().withMessage("Start date must be a ISO8601 non-empty date format"),
 	body("startTime").isISO8601().notEmpty().withMessage("Start time must be a ISO8601 non-empty time format"),
+	body("startAt").optional().isISO8601().withMessage("Start must be an ISO8601 date and time"),
 	body("address").isString().notEmpty().withMessage("Address must be a non-empty string"),
 	body("latitude").isNumeric().notEmpty().withMessage("Latitude must be a non-empty number"),
 	body("longitude").isNumeric().notEmpty().withMessage("Longitude must be a non-empty number"),

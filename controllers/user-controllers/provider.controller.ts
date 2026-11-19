@@ -214,9 +214,12 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 			return res.status(404).json({ message: "Payment details not found for this booking." });
 		}
 
+		// The client secret lets its holder act on the customer's payment intent; providers never use it.
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
+		const { clientSecret, ...providerPayment } = payment.toObject();
 		res.status(200).json({
 			booking: withDisplayStatus(booking),
-			payment,
+			payment: providerPayment,
 		});
 	} catch (error) {
 		console.error("Error getting booking by id:", error);

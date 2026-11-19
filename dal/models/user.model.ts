@@ -50,6 +50,24 @@ interface IUser extends Document {
 	street: string;
 }
 
+// Credentials that must never leave the server. Internal code reads them from the document itself.
+export const USER_SECRET_FIELDS = [
+	"password",
+	"refreshToken",
+	"sessionId",
+	"sessions",
+	"resetPasswordTokens",
+	"emailVerificationTokens",
+] as const;
+
+// Projection for populating or lean-querying users, which bypass the schema transform below.
+export const SAFE_USER_SELECT = USER_SECRET_FIELDS.map((field) => `-${field}`).join(" ");
+
+const stripSecrets = (_doc: unknown, ret: Record<string, unknown>) => {
+	for (const field of USER_SECRET_FIELDS) delete ret[field];
+	return ret;
+};
+
 const rolesSchema = new Schema<Roles>(
 	{
 		User: { type: Boolean, required: true },
@@ -126,6 +144,8 @@ const userSchema = new Schema<IUser>(
 	},
 	{
 		timestamps: true,
+		toJSON: { transform: stripSecrets },
+		toObject: { transform: stripSecrets },
 	},
 );
 

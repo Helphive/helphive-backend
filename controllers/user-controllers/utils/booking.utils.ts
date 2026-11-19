@@ -10,7 +10,7 @@ export type BookingDisplayStatus =
 	| "expired";
 
 // Fields that must never be exposed when a user document is populated into a booking response.
-export const SAFE_USER_SELECT = "-password -refreshToken -sessionId -resetPasswordTokens -emailVerificationTokens";
+export { SAFE_USER_SELECT } from "../../../dal/models/user.model";
 
 // Set by the booking-expired Cloud Task so expiry can be told apart from a user cancellation.
 export const EXPIRED_CANCELLATION_REASON = "Expired: no provider accepted before the start time.";

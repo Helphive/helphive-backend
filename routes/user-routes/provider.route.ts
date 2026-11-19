@@ -18,6 +18,7 @@ import {
 	validateRequestProviderAccountFields,
 	validateUpdateProviderAvailability,
 } from "../../controllers/user-controllers/validators/provider.validators";
+import { blockDemoAccounts } from "../../middleware/blockDemoAccounts";
 
 const upload = multer();
 
@@ -25,6 +26,7 @@ const providerRoute = express.Router();
 
 providerRoute.post(
 	"/request-provider-account",
+	blockDemoAccounts,
 	upload.fields([
 		{ name: "id", maxCount: 1 },
 		{ name: "dbs", maxCount: 1 },
@@ -46,9 +48,9 @@ providerRoute.post("/get-booking-by-id", handleGetBookingById);
 providerRoute.post("/accept-booking", handleAcceptBooking);
 providerRoute.get("/my-orders", handleMyOrders);
 providerRoute.post("/start-booking", handleStartBooking);
-providerRoute.get("/stripe-connect-onboarding", handleGetStripeConnectedAccount);
+providerRoute.get("/stripe-connect-onboarding", blockDemoAccounts, handleGetStripeConnectedAccount);
 providerRoute.get("/get-earnings", handleGetEarnings);
 providerRoute.post("/create-payout", handleCreatePayout);
-providerRoute.get("/stripe-express-login-link", handleGetStripeExpressLoginLink);
+providerRoute.get("/stripe-express-login-link", blockDemoAccounts, handleGetStripeExpressLoginLink);
 
 export default providerRoute;

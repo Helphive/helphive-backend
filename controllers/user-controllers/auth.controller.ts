@@ -20,6 +20,7 @@ import { SAFE_USER_SELECT, isValidObjectId } from "./utils/booking.utils";
 import { createSession, endSession, refreshSession, toPublicUser } from "./utils/session.utils";
 import { createCometChatUser, updateCometChatUser } from "./utils/cometchat.util";
 import stripe from "../service-accounts/stripe";
+import { DEMO_ACCOUNT_BLOCKED_MESSAGE, isDemoAccountEmail } from "../../config/demoAccounts";
 
 const emailVerificationSecret = process.env.EMAIL_VERIFICATION_SECRET || "";
 const ONE_SIGNAL_APP_ID = process.env.ONE_SIGNAL_APP_ID || "";
@@ -215,7 +216,7 @@ export const handleGetUserInfo = async (req: Request, res: Response) => {
 			}
 
 			return res.status(200).json({
-				user,
+				user: toPublicUser(user),
 				email,
 				firstName,
 				lastName,
@@ -293,6 +294,10 @@ export const handleResetPassword = async (req: Request, res: Response) => {
 		const user = await UserModel.findById(userId);
 		if (!user) {
 			return res.status(400).json({ message: "Invalid token" });
+		}
+
+		if (isDemoAccountEmail(user.email)) {
+			return res.status(403).json({ message: DEMO_ACCOUNT_BLOCKED_MESSAGE });
 		}
 
 		const tokenIndex = user.resetPasswordTokens.findIndex((t: string) => t === token);

@@ -50,6 +50,7 @@ import {
 } from "../../middleware/rateLimit";
 import { uploadFields } from "../../middleware/uploads";
 import { rejectUndeliverableSignup } from "../../middleware/signupEmailCheck";
+import { riskListGate } from "../../lib/risk/gate";
 
 const authRoute = express.Router();
 
@@ -59,6 +60,7 @@ authRoute.post(
 	"/signup",
 	signupLimiter,
 	validateSignupFields,
+	riskListGate("signup"),
 	rejectUndeliverableSignup("customer"),
 	handleSignup,
 	markSignupFlow,
@@ -69,13 +71,14 @@ authRoute.post(
 	"/provider-signup",
 	signupLimiter,
 	validateSignupFields,
+	riskListGate("signup"),
 	rejectUndeliverableSignup("provider"),
 	handleSignupProvider,
 	markSignupFlow,
 	createContact,
 	sendMagicLinkEmail,
 );
-authRoute.post("/login", ...loginLimiters, validateLoginFields, handleLogin);
+authRoute.post("/login", ...loginLimiters, validateLoginFields, riskListGate("signin"), handleLogin);
 authRoute.post("/logout", handleLogout);
 authRoute.post("/refresh", ...refreshLimiters, handleRefreshToken);
 authRoute.get("/user-info", verifyJWT, verifyRoles("User", "Provider"), handleGetUserInfo);

@@ -78,6 +78,8 @@ interface IUser extends Document {
 	chatSuspendedReason?: string | null;
 	/** When this user was last confirmed to exist in CometChat. */
 	chatUserReadyAt?: Date | null;
+	/** Set while a risk payout hold is active (lib/risk/holds.ts): "hold" stops payouts and earning releases, "review" the next payout. */
+	payoutHold?: "hold" | "review" | null;
 }
 
 // Credentials that must never leave the server. Internal code reads them from the document itself.
@@ -96,6 +98,7 @@ export const USER_ADMIN_ONLY_FIELDS = [
 	"suspendedReason",
 	"chatSuspendedBy",
 	"chatSuspendedReason",
+	"payoutHold",
 ] as const;
 
 // Projection for populating or lean-querying users, which bypass the schema transform below.
@@ -205,6 +208,7 @@ const userSchema = new Schema<IUser>(
 		chatSuspendedBy: { type: Schema.Types.ObjectId, ref: "Admin" },
 		chatSuspendedReason: { type: String },
 		chatUserReadyAt: { type: Date },
+		payoutHold: { type: String, enum: ["hold", "review"] },
 	},
 	{
 		timestamps: true,

@@ -25,6 +25,7 @@ import { storedFileInfo } from "../../middleware/uploads";
 import { emitEvent } from "../../lib/events";
 import { appFlavorFromHeaders } from "../../lib/appIdentity";
 import { releasePolicy } from "../../lib/platformSettings";
+import { PAYOUT_HELD, blocksPayout, payoutReservationFilter, recordBlocked } from "../../lib/risk/holds";
 import log from "../../lib/logger";
 
 const APPLICATION_FIELDS = ["firstName", "lastName", "email", "phone", "country", "state", "city", "street"] as const;
@@ -565,6 +566,22 @@ export const handleCreatePayout = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "User does not have a Stripe connected account." });
 		}
 
+		// A risk payout hold stops the payout before Stripe is asked anything (the reservation below re-checks it).
+		const refuseHeld = (hold: unknown) => {
+			recordBlocked(user._id, "payouts");
+			emitEvent(
+				{
+					type: "payout.held",
+					actor: { type: "provider", id: user._id },
+					subjects: { providerId: user._id },
+					properties: { amount, hold },
+				},
+				req,
+			);
+			return res.status(PAYOUT_HELD.status).json(PAYOUT_HELD.body);
+		};
+		if (blocksPayout(user.payoutHold)) return refuseHeld(user.payoutHold);
+
 		const externalAccounts = await stripe.accounts.listExternalAccounts(user.stripeConnectedAccountId);
 		if (!externalAccounts.data.length) {
 			return res
@@ -573,11 +590,13 @@ export const handleCreatePayout = async (req: Request, res: Response) => {
 		}
 
 		// Take the amount off the balance first, atomically, so two payouts at once cannot both spend it.
-		const reserved = await UserModel.updateOne(
-			{ _id: user._id, availableBalance: { $gte: amount } },
-			{ $inc: { availableBalance: -amount } },
-		);
+		// The same update refuses a provider whose payouts were put on hold meanwhile (users.payoutHold).
+		const reserved = await UserModel.updateOne(payoutReservationFilter(user._id, amount), {
+			$inc: { availableBalance: -amount },
+		});
 		if (reserved.modifiedCount !== 1) {
+			const now: any = await UserModel.findById(user._id, "payoutHold").lean();
+			if (blocksPayout(now?.payoutHold)) return refuseHeld(now.payoutHold);
 			return res.status(400).json({ message: "You have insufficient balance for this payout." });
 		}
 		reservedFor = user._id;

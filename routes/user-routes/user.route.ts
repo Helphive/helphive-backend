@@ -11,6 +11,7 @@ import {
 	validateCreateBookingFields,
 } from "../../controllers/user-controllers/validators/user.validators";
 import { bookingActionLimiter, createBookingLimiter, paymentIntentLimiter } from "../../middleware/rateLimit";
+import { riskListGate } from "../../lib/risk/gate";
 
 const userRoute = express.Router();
 
@@ -18,6 +19,7 @@ userRoute.post(
 	"/create-booking",
 	createBookingLimiter,
 	validateCreateBookingFields,
+	riskListGate("booking"),
 	handleCreateBooking,
 	handleCreatePaymentIntent,
 );

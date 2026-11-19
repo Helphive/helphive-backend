@@ -54,6 +54,7 @@ import { optionalAdminJWT, verifyAdminJWT } from "../middleware/verifyAdminJWT";
 import { audited } from "../middleware/audited";
 import { registerOperationsRoutes } from "./adminOperations.route";
 import { registerAnalyticsRoutes } from "./adminAnalytics.route";
+import { registerRiskRoutes } from "./adminRisk.route";
 import { requirePermission } from "../middleware/requirePermission";
 import {
 	demoAdminRequestLimiter,
@@ -212,5 +213,7 @@ adminRoute.post(
 registerOperationsRoutes(adminRoute);
 // Analytics (routes/adminAnalytics.route.ts).
 registerAnalyticsRoutes(adminRoute);
+// Fraud and risk (routes/adminRisk.route.ts).
+registerRiskRoutes(adminRoute);
 
 export default adminRoute;

@@ -14,6 +14,7 @@ import { emitEvent } from "../../lib/events";
 import log from "../../lib/logger";
 import { refundTotals } from "../../lib/operations";
 import { beginStripeDelivery, trackWebhookWork, type WebhookDelivery } from "../../lib/webhookRecorder";
+import { recordChargeAssessment } from "../../lib/risk/stripeRisk";
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 const connectedEndpointSecret = process.env.STRIPE_CONNECTED_WEBHOOK_SECRET || "";
@@ -66,10 +67,13 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
 		switch (event.type) {
 			case "payment_intent.succeeded":
 				trackWebhookWork(delivery, updatePaymentStatus(event.data.object.id, "completed"));
+				// Stripe's risk assessment for the risk module: not awaited, never throws, no effect on the outcome.
+				void recordChargeAssessment(event.data.object, "succeeded");
 				break;
 			case "payment_intent.payment_failed":
 				// Recorded as an event only; the booking stays unpaid and the customer can try again, as before.
 				trackWebhookWork(delivery, recordPaymentFailed(event.data.object));
+				void recordChargeAssessment(event.data.object, "failed");
 				break;
 			case "refund.updated": {
 				const refund = event.data.object;

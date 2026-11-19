@@ -9,7 +9,7 @@ export interface Payment extends Document {
 	clientSecret: string;
 	paymentMethod: string;
 	refundId: string;
-	refundStatus: "pending" | "succeeded" | "failed" | "cancelled";
+	refundStatus?: "pending" | "succeeded" | "failed" | "cancelled";
 	refundCreated: Date;
 	refundAmount: number;
 	destinationDetails: {
@@ -27,7 +27,9 @@ const PaymentSchema: Schema = new Schema(
 		clientSecret: { type: String },
 		paymentMethod: { type: String },
 		refundId: { type: String },
-		refundStatus: { type: String, enum: ["pending", "succeeded", "failed", "cancelled"], default: "pending" },
+		// No default: a refund exists only when refundId is set. Older documents still carry a stale "pending" here,
+		// so readers check refundId first (see controllers/user-controllers/utils/payment.utils.ts).
+		refundStatus: { type: String, enum: ["pending", "succeeded", "failed", "cancelled"] },
 		refundCreated: { type: Date },
 		refundAmount: { type: Number },
 		destinationDetails: {

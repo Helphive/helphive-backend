@@ -6,20 +6,20 @@ import stripe from "../service-accounts/stripe";
 
 import { sendNotification, storeNotification } from "../service-accounts/onesignal";
 import { EXPIRED_CANCELLATION_REASON } from "../user-controllers/utils/booking.utils";
-import PaymentModel from "../../dal/models/payment.model";
-import { describeBooking, formatMoney } from "../user-controllers/utils/booking.utils";
+import { describeBooking, formatMoney, isValidObjectId } from "../user-controllers/utils/booking.utils";
+import { refundPaymentIfPaid } from "../user-controllers/utils/auth.utils";
 
 export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: Response) => {
 	try {
 		const { bookingId } = req.body;
 
-		if (!bookingId) {
+		if (!isValidObjectId(bookingId)) {
 			return res.status(200).json({ message: "Booking ID is required" });
 		}
 
 		const booking = await BookingModel.findById(bookingId);
-		if (!booking) {
-			return res.status(200).json({ message: "Booking not found" });
+		if (!booking || booking.status !== "completed") {
+			return res.status(200).json({ message: "Booking not found or not completed" });
 		}
 
 		const provider = await UserModel.findById(booking.providerId);
@@ -40,7 +40,6 @@ export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: R
 			return res.status(200).json({ message: "Earning already processed" });
 		}
 
-		console.log(`Retrieving Stripe account: ${provider.stripeConnectedAccountId}`);
 		const account = await stripe.accounts.retrieve(provider.stripeConnectedAccountId);
 
 		if (account.details_submitted === false) {
@@ -55,21 +54,29 @@ export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: R
 			return res.status(200).json({ message: "Insufficient platform balance for payout" });
 		}
 
-		const transfer = await stripe.transfers.create({
-			amount: amountInCents,
-			currency: "usd",
-			destination: provider.stripeConnectedAccountId,
-		});
+		// Cloud Tasks delivers at least once. The idempotency key makes a repeated run get the same transfer back,
+		// and the conditional update below credits the balance only on the run that completes the earning.
+		const transfer = await stripe.transfers.create(
+			{
+				amount: amountInCents,
+				currency: "usd",
+				destination: provider.stripeConnectedAccountId,
+			},
+			{ idempotencyKey: `earning-transfer-${String(earning._id)}` },
+		);
 
-		earning.status = "completed";
-		earning.completionDate = new Date();
-		earning.transferId = transfer.id;
-		await earning.save();
+		const completed = await EarningModel.findOneAndUpdate(
+			{ _id: earning._id, status: "pending" },
+			{ $set: { status: "completed", completionDate: new Date(), transferId: transfer.id } },
+			{ new: true },
+		);
+		if (!completed) {
+			return res.status(200).json({ message: "Earning already processed" });
+		}
 
-		provider.availableBalance += earning.amount;
-		await provider.save();
+		await UserModel.updateOne({ _id: provider._id }, { $inc: { availableBalance: earning.amount } });
 
-		await sendPaymentNotification(provider._id as string, earning.amount, booking);
+		await sendPaymentNotification(String(provider._id), earning.amount, booking);
 
 		return res.status(200).json({
 			message: "Payment processed successfully",
@@ -107,48 +114,35 @@ export const handleGoogleCloudTasksBookingExpired = async (req: Request, res: Re
 	try {
 		const { bookingId } = req.body;
 
-		if (!bookingId) {
+		if (!isValidObjectId(bookingId)) {
 			return res.status(200).json({ message: "Booking ID is required" });
 		}
 
-		const booking = await BookingModel.findById(bookingId).populate("providerId").exec();
-		if (!booking) {
+		const existing = await BookingModel.findById(bookingId).exec();
+		if (!existing) {
 			return res.status(200).json({ message: "Booking not found" });
 		}
 
-		if (booking.providerId || booking.status !== "pending") {
+		// Only an unassigned pending booking expires, and only once even if the task runs twice.
+		const booking = await BookingModel.findOneAndUpdate(
+			{ _id: existing._id, status: "pending", providerId: null },
+			{
+				$set: {
+					status: "cancelled",
+					cancelledAt: new Date(),
+					cancelledBy: existing.userId,
+					cancellationReason: EXPIRED_CANCELLATION_REASON,
+				},
+			},
+			{ new: true },
+		).exec();
+		if (!booking) {
 			return res.status(200).json({ message: "Booking is not pending" });
 		}
 
-		booking.status = "cancelled";
-		booking.cancelledAt = new Date();
-		booking.cancelledBy = booking.userId;
-		booking.cancellationReason = EXPIRED_CANCELLATION_REASON;
-		await booking.save();
-
 		await sendBookingExpiredNotification(booking.userId.toString(), booking);
 
-		const payment = await PaymentModel.findOne({ bookingId: booking._id }).exec();
-		if (payment) {
-			if (payment.paymentIntentId && payment.status === "completed") {
-				const paymentIntent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
-				if (paymentIntent.status === "succeeded") {
-					const refund = await stripe.refunds.create({
-						payment_intent: payment.paymentIntentId,
-					});
-					payment.refundStatus = "pending";
-					payment.refundId = refund.id;
-					payment.refundAmount = refund.amount / 100;
-					payment.refundCreated = new Date(refund.created * 1000);
-					payment.destinationDetails = {
-						type: refund.destination_details?.type,
-					};
-					await payment.save();
-				} else {
-					console.log(`Payment intent ${payment.paymentIntentId} was not paid, no refund needed.`);
-				}
-			}
-		}
+		await refundPaymentIfPaid(String(booking._id));
 
 		return res.status(200).json({ message: "Booking expired" });
 	} catch (error) {

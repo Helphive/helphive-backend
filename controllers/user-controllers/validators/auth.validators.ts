@@ -1,4 +1,5 @@
 import { body } from "express-validator";
+import { MAX_TEXT_LENGTH } from "./common.validators";
 
 const NAME_REGEX = /^[a-zA-Z\xC0-\uFFFF]+([ \-']{0,1}[a-zA-Z\xC0-\uFFFF]+){0,2}[.]{0,1}$/;
 const EMAIL_REGEX =
@@ -6,7 +7,7 @@ const EMAIL_REGEX =
 
 export const validateLoginFields = [
 	body("email").isEmail().matches(EMAIL_REGEX).withMessage("Invalid email address").isLength({ max: 255 }),
-	body("password").notEmpty().withMessage("Invalid password"),
+	body("password").isString().notEmpty().isLength({ max: 255 }).withMessage("Invalid password"),
 ];
 
 export const validateSignupFields = [
@@ -37,7 +38,7 @@ export const validateSignupFields = [
 ];
 
 export const validateResetPasswordFields = [
-	body("token").notEmpty().withMessage("Token is required"),
+	body("token").isString().notEmpty().isLength({ max: 2048 }).withMessage("Token is required"),
 	body("password")
 		.isLength({ min: 8, max: 255 })
 		.withMessage(
@@ -55,18 +56,43 @@ export const validateResetPasswordFields = [
 
 export const validateUpdateProfileFields = [
 	body("firstName")
-		.optional()
+		.optional({ values: "falsy" })
 		.isLength({ min: 2, max: 50 })
 		.matches(NAME_REGEX)
 		.withMessage("First name must be 2-50 characters and valid."),
 	body("lastName")
-		.optional()
+		.optional({ values: "falsy" })
 		.isLength({ min: 2, max: 50 })
 		.matches(NAME_REGEX)
 		.withMessage("Last name must be 2-50 characters and valid."),
-	body("phone").optional().isString().withMessage("Phone number must be a string."),
-	body("country").optional().isString().withMessage("Country must be a string."),
-	body("state").optional().isString().withMessage("State must be a string."),
-	body("city").optional().isString().withMessage("City must be a string."),
-	body("street").optional().isString().withMessage("Street must be a string."),
+	body("phone")
+		.optional({ values: "falsy" })
+		.isString()
+		.withMessage("Phone number must be a string.")
+		.isLength({ max: MAX_TEXT_LENGTH })
+		.withMessage("Phone number must be at most 200 characters."),
+	body("country")
+		.optional({ values: "falsy" })
+		.isString()
+		.withMessage("Country must be a string.")
+		.isLength({ max: MAX_TEXT_LENGTH })
+		.withMessage("Country must be at most 200 characters."),
+	body("state")
+		.optional({ values: "falsy" })
+		.isString()
+		.withMessage("State must be a string.")
+		.isLength({ max: MAX_TEXT_LENGTH })
+		.withMessage("State must be at most 200 characters."),
+	body("city")
+		.optional({ values: "falsy" })
+		.isString()
+		.withMessage("City must be a string.")
+		.isLength({ max: MAX_TEXT_LENGTH })
+		.withMessage("City must be at most 200 characters."),
+	body("street")
+		.optional({ values: "falsy" })
+		.isString()
+		.withMessage("Street must be a string.")
+		.isLength({ max: MAX_TEXT_LENGTH })
+		.withMessage("Street must be at most 200 characters."),
 ];

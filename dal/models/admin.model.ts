@@ -9,6 +9,8 @@ export interface Admin extends Document {
 		admin: boolean;
 		superAdmin: boolean;
 	};
+	// Every admin token carries the version it was issued under; raising it revokes all of them (sign out everywhere).
+	tokenVersion: number;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -22,6 +24,7 @@ const adminSchema: Schema = new Schema({
 		admin: { type: Boolean, default: false },
 		superAdmin: { type: Boolean, default: false },
 	},
+	tokenVersion: { type: Number, default: 0 },
 	createdAt: { type: Date, default: Date.now },
 	updatedAt: { type: Date, default: Date.now },
 });
@@ -29,6 +32,7 @@ const adminSchema: Schema = new Schema({
 // The admin login and account responses return the document; the password hash stays on the server.
 const stripPassword = (_doc: unknown, ret: Record<string, unknown>) => {
 	delete ret.password;
+	delete ret.tokenVersion;
 	return ret;
 };
 adminSchema.set("toJSON", { transform: stripPassword });

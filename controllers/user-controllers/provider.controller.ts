@@ -14,9 +14,36 @@ import {
 	sendBookingAcceptedNotification,
 	sendBookingStartedNotification,
 } from "./utils/provider.utils";
-import { SAFE_USER_SELECT, isValidObjectId, withDisplayStatus } from "./utils/booking.utils";
+import { isValidObjectId, withDisplayStatus } from "./utils/booking.utils";
+import { COUNTERPARTY_SELECT, withCounterparties } from "./utils/counterparty.utils";
+import { serializePayment } from "./utils/payment.utils";
 import PayoutModel from "../../dal/models/payout.model";
 import { sendCometChatMessage } from "./utils/cometchat.util";
+import { publicValidationErrors } from "../../middleware/sanitizeInput";
+import { storedFileInfo } from "../../middleware/uploads";
+
+const APPLICATION_FIELDS = ["firstName", "lastName", "email", "phone", "country", "state", "city", "street"] as const;
+const JOB_TYPE_KEYS = ["publicAreaAttendant", "roomAttendant", "linenPorter"] as const;
+
+/** Job types from the mobile app's JSON field or the web app's three separate fields; booleans only. */
+const parseJobTypes = (body: Record<string, unknown>) => {
+	let source: Record<string, unknown> = {};
+	if (typeof body.jobTypes === "string") {
+		try {
+			const parsed = JSON.parse(body.jobTypes);
+			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) source = parsed;
+		} catch {
+			source = {};
+		}
+	} else {
+		source = body;
+	}
+	const isTrue = (value: unknown) => value === true || value === "true";
+	return Object.fromEntries(JOB_TYPE_KEYS.map((key) => [key, isTrue(source[key])])) as Record<
+		(typeof JOB_TYPE_KEYS)[number],
+		boolean
+	>;
+};
 
 declare module "express" {
 	interface Request {
@@ -31,7 +58,7 @@ export const handleRequestProviderAccount = async (req: Request, res: Response) 
 	if (!errors.isEmpty()) {
 		return res.status(400).json({
 			message: "Invalid Request.",
-			errors: errors.array(),
+			errors: publicValidationErrors(errors),
 		});
 	}
 
@@ -55,26 +82,27 @@ export const handleRequestProviderAccount = async (req: Request, res: Response) 
 
 		const requestId = uuidv4();
 		const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-		const jobTypes = req.body.jobTypes ? JSON.parse(req.body.jobTypes) : {};
+		const jobTypes = parseJobTypes(req.body);
 
-		async function uploadFile(file: Express.Multer.File, filePath: string): Promise<void> {
-			await googleCloudStorage.bucket(providerAccountBucket).file(filePath).save(file.buffer);
-		}
-
+		// Identity documents go to the private applications bucket; admins read them through short-lived signed URLs.
+		// The stored name uses only the field name and an allow-listed extension, and is never shown to clients.
 		const filePaths: { [key: string]: string } = {};
-
-		for (const fileField in files) {
-			const fileArray = files[fileField];
-			for (const file of fileArray) {
-				const fileType = fileField;
-				const filePath = `${requestId}/${fileType}.${file.originalname.split(".").pop()}`;
-				await uploadFile(file, filePath);
-				filePaths[fileType] = filePath;
-			}
+		for (const field of ["id", "dbs", "resume", "profile"]) {
+			const file = files?.[field]?.[0];
+			if (!file) continue;
+			const { extension, contentType } = storedFileInfo(field, file);
+			const filePath = `${requestId}/${field}.${extension}`;
+			await googleCloudStorage
+				.bucket(providerAccountBucket)
+				.file(filePath)
+				.save(file.buffer, { contentType, resumable: false });
+			filePaths[field] = filePath;
 		}
 
+		// Only the application fields are taken from the request; status, review fields and ids are the server's.
+		const fields = Object.fromEntries(APPLICATION_FIELDS.map((key) => [key, req.body[key]]));
 		const providerAccountRequest = new ProviderAccountRequest({
-			...req.body,
+			...fields,
 			...filePaths,
 			status: "pending",
 			jobTypes,
@@ -145,7 +173,7 @@ export const handleGetBookings = async (req: Request, res: Response) => {
 			status: "pending",
 			providerId: null,
 		})
-			.populate("userId", SAFE_USER_SELECT)
+			.populate("userId", COUNTERPARTY_SELECT)
 			.exec();
 		const bookingIds = bookings.map((booking) => booking._id);
 		const payments = await PaymentModel.find({ bookingId: { $in: bookingIds }, status: "completed" });
@@ -171,7 +199,9 @@ export const handleGetBookings = async (req: Request, res: Response) => {
 			})
 			.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
 
-		res.status(200).json({ paidBookings: paidBookings.map(withDisplayStatus) });
+		res.status(200).json({
+			paidBookings: paidBookings.map((booking) => withCounterparties(withDisplayStatus(booking))),
+		});
 	} catch (error) {
 		console.error("Error getting bookings:", error);
 		res.status(500).json({
@@ -195,7 +225,7 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 			return res.status(404).json({ message: "User not found." });
 		}
 
-		const booking = await BookingModel.findById(bookingId).populate("userId", SAFE_USER_SELECT).exec();
+		const booking = await BookingModel.findById(bookingId).populate("userId", COUNTERPARTY_SELECT).exec();
 		if (!booking) {
 			return res.status(404).json({ message: "Booking not found." });
 		}
@@ -215,11 +245,9 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 		}
 
 		// The client secret lets its holder act on the customer's payment intent; providers never use it.
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
-		const { clientSecret, ...providerPayment } = payment.toObject();
 		res.status(200).json({
-			booking: withDisplayStatus(booking),
-			payment: providerPayment,
+			booking: withCounterparties(withDisplayStatus(booking)),
+			payment: serializePayment(payment, { includeClientSecret: false }),
 		});
 	} catch (error) {
 		console.error("Error getting booking by id:", error);
@@ -281,11 +309,18 @@ export const handleAcceptBooking = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "Please connect your stripe account first." });
 		}
 
-		booking.providerId = user._id as any;
-		await booking.save();
+		// Only one provider can win: the update matches only while the booking is still unassigned.
+		const accepted = await BookingModel.findOneAndUpdate(
+			{ _id: booking._id, status: "pending", providerId: null },
+			{ $set: { providerId: user._id } },
+			{ new: true },
+		).exec();
+		if (!accepted) {
+			return res.status(409).json({ message: "Booking has already been accepted by another provider." });
+		}
 
-		await sendBookingAcceptedNotification(booking.userId.toString(), user.firstName, booking);
-		await sendCometChatMessage(booking.userId.toString(), (user._id as string).toString());
+		await sendBookingAcceptedNotification(booking.userId.toString(), user.firstName, accepted);
+		await sendCometChatMessage(booking.userId.toString(), String(user._id));
 
 		res.status(200).json({ message: "Booking accepted successfully." });
 	} catch (error) {
@@ -326,6 +361,10 @@ export const handleStartBooking = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "User email and booking id is required." });
 		}
 
+		if (!isValidObjectId(bookingId)) {
+			return res.status(400).json({ message: "Invalid booking id." });
+		}
+
 		const user = await UserModel.findOne({ email: userEmail });
 		const booking = await BookingModel.findById(bookingId);
 
@@ -340,6 +379,10 @@ export const handleStartBooking = async (req: Request, res: Response) => {
 
 		if (booking.providerId?.toString() != user._id?.toString()) {
 			return res.status(400).json({ message: "This is not the provider for this booking." });
+		}
+
+		if (booking.status !== "pending") {
+			return res.status(400).json({ message: "Only an accepted booking that has not started can be started." });
 		}
 
 		booking.userApprovalRequested = true;
@@ -370,7 +413,7 @@ export const handleGetStripeConnectedAccount = async (req: Request, res: Respons
 		if (!connectedAccountId) {
 			const account = await stripe.accounts.create({
 				type: "express",
-				email: req.body.email,
+				email: email,
 				settings: {
 					payouts: {
 						schedule: {
@@ -380,8 +423,17 @@ export const handleGetStripeConnectedAccount = async (req: Request, res: Respons
 				},
 			});
 
-			connectedAccountId = account.id;
-			await UserModel.findOneAndUpdate({ email: email }, { stripeConnectedAccountId: connectedAccountId });
+			// Store it only if no other request stored one meanwhile, so the user keeps a single account.
+			const stored = await UserModel.findOneAndUpdate(
+				{ email: email, stripeConnectedAccountId: { $in: ["", null] } },
+				{ $set: { stripeConnectedAccountId: account.id } },
+				{ new: true },
+			).exec();
+			connectedAccountId =
+				stored?.stripeConnectedAccountId ??
+				(await UserModel.findOne({ email }).select("stripeConnectedAccountId").lean())
+					?.stripeConnectedAccountId ??
+				account.id;
 		}
 
 		const connectedAccountOnboardingLink = await generateAccountLink(connectedAccountId);
@@ -422,14 +474,15 @@ export const handleGetEarnings = async (req: Request, res: Response) => {
 };
 
 export const handleCreatePayout = async (req: Request, res: Response) => {
+	const email = req.user;
+	const amount = req.body.amount;
+
+	if (typeof amount !== "number" || !Number.isInteger(amount) || amount < 20) {
+		return res.status(400).json({ message: "Valid amount is required." });
+	}
+
+	let reservedFor: unknown = null;
 	try {
-		const email = req.user;
-		const amount = req.body.amount;
-
-		if (!amount || isNaN(amount) || amount < 20 || !Number.isInteger(amount)) {
-			return res.status(400).json({ message: "Valid amount is required." });
-		}
-
 		const user = await UserModel.findOne({ email });
 		if (!user) {
 			return res.status(404).json({ message: "User not found." });
@@ -439,17 +492,22 @@ export const handleCreatePayout = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "User does not have a Stripe connected account." });
 		}
 
-		if (user.availableBalance < amount) {
-			return res.status(400).json({ message: "You have insufficient balance for this payout." });
-		}
-
 		const externalAccounts = await stripe.accounts.listExternalAccounts(user.stripeConnectedAccountId);
-
 		if (!externalAccounts.data.length) {
 			return res
 				.status(400)
 				.json({ message: "Please add a bank account to your stripe account (External account)" });
 		}
+
+		// Take the amount off the balance first, atomically, so two payouts at once cannot both spend it.
+		const reserved = await UserModel.updateOne(
+			{ _id: user._id, availableBalance: { $gte: amount } },
+			{ $inc: { availableBalance: -amount } },
+		);
+		if (reserved.modifiedCount !== 1) {
+			return res.status(400).json({ message: "You have insufficient balance for this payout." });
+		}
+		reservedFor = user._id;
 
 		const payout = await stripe.payouts.create(
 			{
@@ -460,27 +518,37 @@ export const handleCreatePayout = async (req: Request, res: Response) => {
 				stripeAccount: user.stripeConnectedAccountId,
 			},
 		);
+		// From here the money has left; the balance stays reduced even if recording fails below.
+		reservedFor = null;
 
-		const payoutDetails = await stripe.payouts.retrieve(payout.id, {
-			stripeAccount: user.stripeConnectedAccountId,
-		});
-
-		const destinationDetails =
-			payoutDetails.destination && typeof payoutDetails.destination === "string"
-				? await stripe.accounts.retrieveExternalAccount(
-						user.stripeConnectedAccountId,
-						payoutDetails.destination,
-					)
-				: null;
-
-		const destinationInfo = destinationDetails
-			? {
+		let destinationInfo: { type: string; last4: string | null; country: string | null; currency: string | null } = {
+			type: "unknown",
+			last4: null,
+			country: null,
+			currency: null,
+		};
+		try {
+			const payoutDetails = await stripe.payouts.retrieve(payout.id, {
+				stripeAccount: user.stripeConnectedAccountId,
+			});
+			const destinationDetails =
+				payoutDetails.destination && typeof payoutDetails.destination === "string"
+					? await stripe.accounts.retrieveExternalAccount(
+							user.stripeConnectedAccountId,
+							payoutDetails.destination,
+						)
+					: null;
+			if (destinationDetails) {
+				destinationInfo = {
 					type: destinationDetails.object,
 					last4: destinationDetails.last4,
 					country: destinationDetails.country || null,
 					currency: destinationDetails.currency || null,
-				}
-			: { type: "unknown", last4: null, country: null, currency: null };
+				};
+			}
+		} catch (error) {
+			console.error("Error reading payout destination:", error);
+		}
 
 		const payoutRecord = await PayoutModel.create({
 			userId: user._id,
@@ -493,18 +561,21 @@ export const handleCreatePayout = async (req: Request, res: Response) => {
 			destinationDetails: destinationInfo,
 		});
 
-		user.availableBalance -= amount;
-		await user.save();
-
 		return res.status(200).json({
 			success: true,
 			payout: payoutRecord,
 		});
 	} catch (error: any) {
 		console.error("Error creating payout:", error);
+		if (reservedFor) {
+			// Stripe did not create the payout; give the reserved amount back.
+			await UserModel.updateOne({ _id: reservedFor }, { $inc: { availableBalance: amount } }).catch((err) =>
+				console.error("Error restoring balance after a failed payout:", err),
+			);
+		}
 
 		if (error.type === "StripeInvalidRequestError") {
-			return res.status(400).json({ message: error.message });
+			return res.status(400).json({ message: "The payout could not be created. Check your Stripe account." });
 		}
 
 		return res.status(500).json({ message: "Internal server error" });

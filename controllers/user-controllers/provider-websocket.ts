@@ -1,64 +1,107 @@
-import { WebSocket as WS } from "ws";
+import type { IncomingMessage } from "http";
+import type { Duplex } from "stream";
+import { WebSocketServer, WebSocket as WS } from "ws";
 import UserModel from "../../dal/models/user.model";
+import { verifyAccessToken } from "./utils/token.utils";
+import { isSessionActive } from "./utils/session.utils";
+import { attachProviderSocket, AvailabilityUpdate, MAX_MESSAGE_BYTES, ProviderCheck } from "./provider-websocket-auth";
+import {
+	FixedWindowCounter,
+	RATE_LIMITS,
+	RATE_LIMIT_MESSAGE,
+	clientIpFrom,
+	ipKey,
+} from "../../middleware/rateLimitKeys";
 
-interface AvailabilityMessage {
-	isProviderAvailable?: boolean;
-	currentLocation?: {
-		latitude: number;
-		longitude: number;
-	};
-	selectedJobs?: number[];
-}
+export const PROVIDER_AVAILABILITY_PATH = "/provider-availability";
 
-// Latest socket per provider. A reconnect (e.g. on location change) opens a new socket before the old one's
-// close event fires, so only the latest socket may mark the provider offline.
+// Latest socket per provider. A reconnect opens a new socket before the old one's close event fires, so only the
+// latest socket may mark the provider offline.
 const activeSockets = new Map<string, WS>();
 
-export const handleProviderAvailabilityWebSocket = (ws: WS, userEmail: string) => {
-	activeSockets.set(userEmail, ws);
+const isApprovedProvider = (user: InstanceType<typeof UserModel>) =>
+	!!user.roles?.Provider && user.providerStatus === "approved";
 
-	ws.on("message", async (message: Buffer) => {
-		const messageString = message.toString();
-		try {
-			const user = await UserModel.findOne({ email: userEmail });
-			if (!user) {
-				ws.send(JSON.stringify({ error: "User not found." }));
-				ws.close();
-				return;
-			}
+const authenticate = async (token: string): Promise<ProviderCheck> => {
+	const result = await verifyAccessToken(token);
+	if (!result.ok || !isApprovedProvider(result.user)) return { ok: false };
+	return { ok: true, email: result.email, sessionId: result.sessionId };
+};
 
-			const data: AvailabilityMessage = JSON.parse(messageString);
-			if (data.isProviderAvailable !== undefined) {
-				user.isProviderAvailable = data.isProviderAvailable;
-				user.currentLocation = data.currentLocation || user.currentLocation;
-				if (data.selectedJobs) {
-					user.selectedJobTypes = data.selectedJobs.map((id: number) => ({ id }));
-				}
-				try {
-					await user.save();
-					console.log("User data saved successfully.");
-					ws.send(JSON.stringify({ message: "Provider availability updated." }));
-				} catch (error) {
-					console.error("Error saving user data:", error);
-					ws.send(JSON.stringify({ error: "An error occurred while saving user data." }));
-				}
-			} else {
-				console.log("No availability data found in message.");
-			}
-		} catch (error) {
-			console.error("Error processing message:", error);
-			ws.send(JSON.stringify({ error: "An error occurred while processing the message." }));
-		}
+const stillAuthorized = async (email: string, sessionId: string) => {
+	const user = await UserModel.findOne({ email }).exec();
+	return !!user && isSessionActive(user, sessionId) && isApprovedProvider(user);
+};
+
+const saveAvailability = async (email: string, update: AvailabilityUpdate) => {
+	const set: Record<string, unknown> = { isProviderAvailable: update.isProviderAvailable };
+	if (update.currentLocation) set.currentLocation = update.currentLocation;
+	if (update.selectedJobs) set.selectedJobTypes = update.selectedJobs.map((id) => ({ id }));
+	await UserModel.updateOne({ email }, { $set: set }, { runValidators: true }).exec();
+};
+
+const markOffline = async (email: string) => {
+	try {
+		await UserModel.updateOne({ email }, { $set: { isProviderAvailable: false } }).exec();
+	} catch (error) {
+		console.error("Error updating provider availability on disconnect:", error);
+	}
+};
+
+export const handleProviderAvailabilityWebSocket = (ws: WS) => {
+	attachProviderSocket(ws, {
+		authenticate,
+		stillAuthorized,
+		saveAvailability,
+		onAuthenticated: (email) => activeSockets.set(email, ws),
+		onAuthenticatedClose: (email) => {
+			if (activeSockets.get(email) !== ws) return;
+			activeSockets.delete(email);
+			void markOffline(email);
+		},
+		setTimer: (fn, ms) => setTimeout(fn, ms),
+		clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout),
+		log: (message, error) => console.error(message, error),
 	});
+};
 
-	ws.on("close", async () => {
-		if (activeSockets.get(userEmail) !== ws) return;
-		activeSockets.delete(userEmail);
+const rejectUpgrade = (
+	socket: Duplex,
+	status: number,
+	text: string,
+	message: string,
+	headers: Record<string, string> = {},
+) => {
+	const lines = [`HTTP/1.1 ${status} ${text}`, "Connection: close", "Content-Type: application/json"];
+	for (const [name, value] of Object.entries(headers)) lines.push(`${name}: ${value}`);
+	const body = JSON.stringify({ message });
+	lines.push(`Content-Length: ${Buffer.byteLength(body)}`);
+	socket.end(`${lines.join("\r\n")}\r\n\r\n${body}`);
+};
+
+/** Accepts websocket upgrades on the provider availability path only, limited per client IP. */
+export const createProviderAvailabilityUpgradeHandler = (trustProxyHops: number) => {
+	const wsServer = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
+	const connections = new FixedWindowCounter(RATE_LIMITS.wsConnectionsPerIp);
+	wsServer.on("connection", (ws: WS) => handleProviderAvailabilityWebSocket(ws));
+
+	return (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+		socket.on("error", () => socket.destroy());
+		let pathname = "";
 		try {
-			await UserModel.updateOne({ email: userEmail }, { $set: { isProviderAvailable: false } }).exec();
-			console.log("Connection closed, provider availability set to false.");
-		} catch (error) {
-			console.error("Error updating provider availability on disconnect:", error);
+			pathname = new URL(req.url || "/", "http://localhost").pathname.replace(/\/+$/, "");
+		} catch {
+			pathname = "";
 		}
-	});
+		if (pathname !== PROVIDER_AVAILABILITY_PATH) return rejectUpgrade(socket, 404, "Not Found", "Not found.");
+
+		const ip = clientIpFrom(req.socket.remoteAddress, req.headers["x-forwarded-for"], trustProxyHops);
+		const attempt = connections.hit(ipKey(ip));
+		if (!attempt.allowed) {
+			return rejectUpgrade(socket, 429, "Too Many Requests", RATE_LIMIT_MESSAGE, {
+				"Retry-After": String(attempt.retryAfter),
+			});
+		}
+		wsServer.handleUpgrade(req, socket, head, (ws) => wsServer.emit("connection", ws, req));
+	};
 };

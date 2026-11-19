@@ -1,7 +1,34 @@
 import { sendNotification, storeNotification } from "../../service-accounts/onesignal";
 import { googleCloudTasks } from "../../service-accounts/cloud-tasks";
+import stripe from "../../service-accounts/stripe";
+import PaymentModel from "../../../dal/models/payment.model";
 import { describeBooking } from "./booking.utils";
+import { hasRefund } from "./payment.utils";
 import { GOOGLE_CLOUD_TASKS_QUEUE_PATH, SERVER_BASE_URL } from "../../../config/config";
+
+/**
+ * Refunds a booking's payment in full when it was paid and not refunded yet. Used by cancellation and expiry; the
+ * idempotency key makes Stripe return the same refund if two of them race.
+ */
+export const refundPaymentIfPaid = async (bookingId: string) => {
+	const payment = await PaymentModel.findOne({ bookingId }).exec();
+	if (!payment || !payment.paymentIntentId || payment.status !== "completed" || hasRefund(payment)) return;
+	const paymentIntent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
+	if (paymentIntent.status !== "succeeded") {
+		console.log(`Payment intent ${payment.paymentIntentId} was not paid, no refund needed.`);
+		return;
+	}
+	const refund = await stripe.refunds.create(
+		{ payment_intent: payment.paymentIntentId },
+		{ idempotencyKey: `refund-${String(payment._id)}` },
+	);
+	payment.refundStatus = "pending";
+	payment.refundId = refund.id;
+	payment.refundAmount = refund.amount / 100;
+	payment.refundCreated = new Date(refund.created * 1000);
+	payment.destinationDetails = { type: refund.destination_details?.type };
+	await payment.save();
+};
 
 export const sendBookingCompletedNotification = async (userId: string, providerId: string, booking: any) => {
 	const bookingId = booking._id.toString();

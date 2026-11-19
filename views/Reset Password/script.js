@@ -7,8 +7,6 @@ document.addEventListener("DOMContentLoaded", function () {
 		const urlParams = new URLSearchParams(window.location.search);
 		const token = urlParams.get("token");
 
-		console.log(token);
-
 		if (!token) {
 			alert("Token is missing");
 			return;

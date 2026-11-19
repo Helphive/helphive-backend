@@ -7,8 +7,11 @@ import UserModel from "../../dal/models/user.model";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
 import { createGoogleCloudTaskBookingExpiredTrigger, sendBookingStartApprovedNotification } from "./utils/user.utils";
-import { SAFE_USER_SELECT, isValidObjectId, withDisplayStatus } from "./utils/booking.utils";
+import { isValidObjectId, withDisplayStatus } from "./utils/booking.utils";
 import { resolveBookingStart } from "./utils/bookingStart.utils";
+import { COUNTERPARTY_SELECT, withCounterparties } from "./utils/counterparty.utils";
+import { serializePayment } from "./utils/payment.utils";
+import { publicValidationErrors } from "../../middleware/sanitizeInput";
 
 declare module "express" {
 	interface Request {
@@ -19,14 +22,11 @@ declare module "express" {
 }
 
 export const handleCreateBooking = async (req: Request, res: Response, next: NextFunction) => {
-	console.log("Handling create booking request...");
-
 	const errors = validationResult(req);
 	if (!errors.isEmpty()) {
-		console.error("Validation error:", errors.array());
 		return res.status(400).json({
 			message: "Invalid Request.",
-			errors: errors.array(),
+			errors: publicValidationErrors(errors),
 		});
 	}
 
@@ -70,11 +70,11 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 		await newBooking.save();
 
 		await createGoogleCloudTaskBookingExpiredTrigger(
-			(newBooking._id as string).toString(),
+			String(newBooking._id),
 			new Date(newBooking.startDate.getTime()),
 		);
 
-		req.bookingId = (newBooking._id as string).toString();
+		req.bookingId = String(newBooking._id);
 		next();
 	} catch (error) {
 		console.error("Error handling create booking:", error);
@@ -84,18 +84,50 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 	}
 };
 
+/**
+ * Payment intent for a booking of the caller's. After create-booking the booking id comes from req.bookingId; the
+ * standalone route takes it from the body. The amount is always computed from the stored booking.
+ */
 export const handleCreatePaymentIntent = async (req: Request, res: Response) => {
-	const { rate, hours } = req.body;
-
 	try {
-		const paymentAmount = Number(rate) * Number(hours);
-		const paymentIntent = await stripe.paymentIntents.create({
-			amount: paymentAmount * 100,
-			currency: "usd",
-		});
+		const bookingId = req.bookingId ?? req.body?.bookingId;
+		if (!isValidObjectId(bookingId)) {
+			return res.status(400).json({ message: "Invalid booking id." });
+		}
+		const user = await UserModel.findOne({ email: req.user }).select("_id").exec();
+		const booking = await BookingModel.findById(bookingId).exec();
+		if (!user || !booking || booking.userId.toString() !== String(user._id)) {
+			return res.status(404).json({ message: "Booking not found." });
+		}
+		if (booking.status !== "pending" || booking.providerId) {
+			return res.status(400).json({ message: "This booking can no longer be paid." });
+		}
+
+		// Reuse an open payment rather than creating a second charge for the same booking.
+		const existing = await PaymentModel.findOne({ bookingId: booking._id }).sort({ createdAt: -1 }).exec();
+		if (existing?.status === "completed") {
+			return res.status(400).json({ message: "This booking has already been paid." });
+		}
+		if (existing?.paymentIntentId && existing.clientSecret) {
+			return res.json({
+				bookingId: String(booking._id),
+				paymentIntentId: existing.paymentIntentId,
+				clientSecret: existing.clientSecret,
+			});
+		}
+
+		const paymentAmount = booking.rate * booking.hours;
+		const paymentIntent = await stripe.paymentIntents.create(
+			{
+				amount: Math.round(paymentAmount * 100),
+				currency: "usd",
+				metadata: { bookingId: String(booking._id) },
+			},
+			{ idempotencyKey: `booking-payment-${String(booking._id)}` },
+		);
 
 		const newPayment = new PaymentModel({
-			bookingId: req.bookingId,
+			bookingId: booking._id,
 			amount: paymentAmount,
 			date: new Date(),
 			status: "pending",
@@ -105,7 +137,7 @@ export const handleCreatePaymentIntent = async (req: Request, res: Response) => 
 		await newPayment.save();
 
 		res.json({
-			bookingId: req.bookingId,
+			bookingId: String(booking._id),
 			paymentIntentId: paymentIntent.id,
 			clientSecret: paymentIntent.client_secret,
 		});
@@ -189,7 +221,7 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 			return res.status(404).json({ message: "User not found." });
 		}
 
-		const booking = await BookingModel.findById(bookingId).populate("providerId", SAFE_USER_SELECT).exec();
+		const booking = await BookingModel.findById(bookingId).populate("providerId", COUNTERPARTY_SELECT).exec();
 		if (!booking) {
 			return res.status(404).json({ message: "Booking not found." });
 		}
@@ -204,8 +236,8 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 		}
 
 		res.status(200).json({
-			booking: withDisplayStatus(booking),
-			payment,
+			booking: withCounterparties(withDisplayStatus(booking)),
+			payment: serializePayment(payment, { includeClientSecret: true }),
 		});
 	} catch (error) {
 		console.error("Error getting booking by id:", error);
@@ -237,11 +269,16 @@ export const handleApproveStartJobRequest = async (req: Request, res: Response) 
 			return res.status(403).json({ message: "User not authorized to approve this booking." });
 		}
 
-		booking.status = "in progress";
-		booking.startedAt = new Date();
-		await booking.save();
+		const started = await BookingModel.findOneAndUpdate(
+			{ _id: booking._id, status: "pending", userApprovalRequested: true, providerId: booking.providerId },
+			{ $set: { status: "in progress", startedAt: new Date() } },
+			{ new: true },
+		).exec();
+		if (!started) {
+			return res.status(404).json({ message: "Booking not found or not pending." });
+		}
 
-		await sendBookingStartApprovedNotification(booking.providerId.toString(), booking);
+		await sendBookingStartApprovedNotification(booking.providerId.toString(), started);
 
 		res.status(200).json({ message: "Booking has been started." });
 	} catch (error) {

@@ -1,5 +1,4 @@
 import express from "express";
-import multer from "multer";
 import {
 	handleRequestProviderAccount,
 	handleAccountApprovalScreen,
@@ -15,42 +14,54 @@ import {
 	handleUpdateProviderAvailability,
 } from "../../controllers/user-controllers/provider.controller";
 import {
+	validateBookingIdBody,
+	validateCreatePayoutFields,
 	validateRequestProviderAccountFields,
 	validateUpdateProviderAvailability,
 } from "../../controllers/user-controllers/validators/provider.validators";
 import { blockDemoAccounts } from "../../middleware/blockDemoAccounts";
-
-const upload = multer();
+import { requireApprovedProvider } from "../../middleware/requireApprovedProvider";
+import { bookingActionLimiter, payoutLimiter, uploadLimiter } from "../../middleware/rateLimit";
+import { uploadFields } from "../../middleware/uploads";
 
 const providerRoute = express.Router();
 
 providerRoute.post(
 	"/request-provider-account",
 	blockDemoAccounts,
-	upload.fields([
-		{ name: "id", maxCount: 1 },
-		{ name: "dbs", maxCount: 1 },
-		{ name: "resume", maxCount: 1 },
-		{ name: "profile", maxCount: 1 },
-	]),
+	uploadLimiter,
+	uploadFields(["id", "dbs", "resume", "profile"]),
 	validateRequestProviderAccountFields,
 	handleRequestProviderAccount,
 );
 
 providerRoute.put(
 	"/update-provider-availability",
+	requireApprovedProvider,
 	validateUpdateProviderAvailability,
 	handleUpdateProviderAvailability,
 );
 providerRoute.get("/account-approval-screen", handleAccountApprovalScreen);
-providerRoute.get("/get-bookings", handleGetBookings);
-providerRoute.post("/get-booking-by-id", handleGetBookingById);
-providerRoute.post("/accept-booking", handleAcceptBooking);
+providerRoute.get("/get-bookings", requireApprovedProvider, handleGetBookings);
+providerRoute.post("/get-booking-by-id", requireApprovedProvider, handleGetBookingById);
+providerRoute.post(
+	"/accept-booking",
+	requireApprovedProvider,
+	bookingActionLimiter,
+	validateBookingIdBody,
+	handleAcceptBooking,
+);
 providerRoute.get("/my-orders", handleMyOrders);
-providerRoute.post("/start-booking", handleStartBooking);
+providerRoute.post(
+	"/start-booking",
+	requireApprovedProvider,
+	bookingActionLimiter,
+	validateBookingIdBody,
+	handleStartBooking,
+);
 providerRoute.get("/stripe-connect-onboarding", blockDemoAccounts, handleGetStripeConnectedAccount);
 providerRoute.get("/get-earnings", handleGetEarnings);
-providerRoute.post("/create-payout", handleCreatePayout);
+providerRoute.post("/create-payout", payoutLimiter, validateCreatePayoutFields, handleCreatePayout);
 providerRoute.get("/stripe-express-login-link", blockDemoAccounts, handleGetStripeExpressLoginLink);
 
 export default providerRoute;

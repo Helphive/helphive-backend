@@ -57,12 +57,13 @@ export type RefreshResult =
 export const refreshSession = async (presentedToken: string): Promise<RefreshResult> => {
 	let decoded: RefreshPayload;
 	try {
-		decoded = jwt.verify(presentedToken, refreshTokenKey) as RefreshPayload;
+		decoded = jwt.verify(presentedToken, refreshTokenKey, { algorithms: ["HS256"] }) as RefreshPayload;
 	} catch {
 		return { ok: false, status: 403, message: "Refresh token is invalid or expired." };
 	}
 	const { email, sessionId } = decoded?.UserInfo ?? {};
-	if (!email || !sessionId) return { ok: false, status: 403, message: "Refresh token is malformed." };
+	if (typeof email !== "string" || typeof sessionId !== "string" || !email || !sessionId)
+		return { ok: false, status: 403, message: "Refresh token is malformed." };
 
 	const user = await UserModel.findOne({ email }).exec();
 	if (!user) return { ok: false, status: 403, message: "User not found." };
@@ -101,13 +102,22 @@ export const refreshSession = async (presentedToken: string): Promise<RefreshRes
 	return { ok: true, user, ...tokens };
 };
 
-/** Ends only the session the token belongs to. */
+/** Ends only the session the token belongs to. The token must carry our signature; an expired one still works. */
 export const endSession = async (presentedToken: string) => {
-	const decoded = jwt.decode(presentedToken) as RefreshPayload | null;
+	let decoded: RefreshPayload | null;
+	try {
+		decoded = jwt.verify(presentedToken, refreshTokenKey, {
+			algorithms: ["HS256"],
+			ignoreExpiration: true,
+		}) as RefreshPayload;
+	} catch {
+		return;
+	}
 	const sessionId = decoded?.UserInfo?.sessionId;
-	const user = sessionId
-		? await UserModel.findOne({ $or: [{ "sessions.sessionId": sessionId }, { refreshToken: presentedToken }] })
-		: await UserModel.findOne({ refreshToken: presentedToken });
+	const user =
+		typeof sessionId === "string" && sessionId
+			? await UserModel.findOne({ $or: [{ "sessions.sessionId": sessionId }, { refreshToken: presentedToken }] })
+			: await UserModel.findOne({ refreshToken: presentedToken });
 	if (!user) return;
 	user.sessions = user.sessions.filter((s) => s.sessionId !== sessionId);
 	if (user.refreshToken.includes(presentedToken)) {
@@ -115,4 +125,11 @@ export const endSession = async (presentedToken: string) => {
 		user.sessionId = "";
 	}
 	await user.save();
+};
+
+/** Signs the user out on every device (the caller saves). Access tokens stop working at their next request. */
+export const endAllSessions = (user: UserDoc) => {
+	user.sessions = [];
+	user.refreshToken = [];
+	user.sessionId = "";
 };

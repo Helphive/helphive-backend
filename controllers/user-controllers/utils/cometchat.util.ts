@@ -38,7 +38,8 @@ export const sendCometChatMessage = async (userId: string, friendId: string) => 
 	const headers = {
 		accept: "application/json",
 		"content-type": "application/json",
-		apikey: "d9911e858a3e0fc5620bc055d37351a9cb1df0ea",
+		// Was a hard-coded key (public in git history since 92d2ae0): it must be rotated in CometChat.
+		apikey: apiKey,
 		onBehalfOf: userId,
 	};
 

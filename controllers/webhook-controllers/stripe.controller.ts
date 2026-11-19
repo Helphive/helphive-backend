@@ -16,18 +16,33 @@ const connectedEndpointSecret = process.env.STRIPE_CONNECTED_WEBHOOK_SECRET || "
 const resend = new Resend(process.env.RESEND_API_KEY);
 const supportEmail = SUPPORT_EMAIL || "";
 
-export const handleStripeWebhook = async (req: Request, res: Response) => {
-	const sig = req.headers["stripe-signature"] || "";
-	const body = req.body;
-
-	let event;
-
+/**
+ * The verified Stripe event, or null after answering. An empty signing secret would let anyone sign events (Stripe's
+ * library accepts it), so a missing secret refuses every call instead.
+ */
+const verifyStripeEvent = (req: Request, res: Response, secret: string, name: string): Stripe.Event | null => {
+	if (!secret) {
+		console.error(`${name} is not set; refusing Stripe webhook calls.`);
+		res.status(503).json({ message: "Webhook not configured." });
+		return null;
+	}
+	const sig = req.headers["stripe-signature"];
+	if (typeof sig !== "string" || !Buffer.isBuffer(req.body)) {
+		res.status(400).json({ message: "Invalid signature." });
+		return null;
+	}
 	try {
-		event = stripe.webhooks.constructEvent(body, sig, endpointSecret);
+		return stripe.webhooks.constructEvent(req.body, sig, secret);
 	} catch (err: any) {
 		console.log(`Stripe Webhook signature verification failed:`, err.message);
-		return res.status(400).send(`Stripe Webhook Error: ${err.message}`);
+		res.status(400).json({ message: "Invalid signature." });
+		return null;
 	}
+};
+
+export const handleStripeWebhook = async (req: Request, res: Response) => {
+	const event = verifyStripeEvent(req, res, endpointSecret, "STRIPE_WEBHOOK_SECRET");
+	if (!event) return;
 
 	switch (event.type) {
 		case "payment_intent.succeeded":
@@ -60,13 +75,16 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
 
 const updatePaymentStatus = async (paymentIntentId: string, status: "pending" | "completed" | "cancelled") => {
 	try {
-		const payment = await PaymentModel.findOne({ paymentIntentId });
+		// Stripe can deliver an event more than once; only the first transition notifies anyone.
+		const payment = await PaymentModel.findOneAndUpdate(
+			{ paymentIntentId, status: { $ne: status } },
+			{ $set: { status } },
+			{ new: true },
+		);
 		if (!payment) {
-			console.error(`Payment with intent ID ${paymentIntentId} not found.`);
+			console.log(`Payment with intent ID ${paymentIntentId} not found or already ${status}.`);
 			return;
 		}
-		payment.status = status;
-		await payment.save();
 		const booking = await BookingModel.findById(payment.bookingId);
 		if (!booking) {
 			console.error(`Booking with ID ${payment.bookingId} not found.`);
@@ -100,7 +118,12 @@ const sendPaymentSucceededNotification = async (booking: InstanceType<typeof Boo
 
 const sendBookingNotification = async (bookingId: any, booking: InstanceType<typeof BookingModel>) => {
 	try {
-		const availableProviders = await UserModel.find({ isProviderAvailable: true });
+		// Only approved providers hear about new jobs; anyone else could not open or accept them anyway.
+		const availableProviders = await UserModel.find({
+			isProviderAvailable: true,
+			"roles.Provider": true,
+			providerStatus: "approved",
+		}).select("_id currentLocation");
 		const providersInRadius = availableProviders.filter((provider) => {
 			const distance = getDistanceFromLatLonInKm(
 				booking.latitude,
@@ -155,17 +178,8 @@ function deg2rad(deg: number) {
 }
 
 export const handleStripeConnectedPayoutsWebhook = async (req: Request, res: Response) => {
-	const sig = req.headers["stripe-signature"] || "";
-	const body = req.body;
-
-	let event;
-
-	try {
-		event = stripe.webhooks.constructEvent(body, sig, connectedEndpointSecret);
-	} catch (err: any) {
-		console.log(`Stripe Webhook signature verification failed:`, err.message);
-		return res.status(400).send(`Stripe Webhook Error: ${err.message}`);
-	}
+	const event = verifyStripeEvent(req, res, connectedEndpointSecret, "STRIPE_CONNECTED_WEBHOOK_SECRET");
+	if (!event) return;
 
 	switch (event.type) {
 		case "payout.paid":
@@ -194,26 +208,25 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const updatePayoutStatus = async (payoutId: string, status: "paid" | "failed" | "cancelled") => {
 	try {
+		// The payout record is written just after Stripe creates the payout; give it a moment to exist.
 		await delay(5000);
-		const payout = await PayoutModel.findOne({ payoutId });
-		if (!payout) {
-			console.error(`Payout with ID ${payoutId} not found.`);
+		// One atomic transition per status. Failed and cancelled are final, so a redelivered event can never credit
+		// the balance twice.
+		const previous = await PayoutModel.findOneAndUpdate(
+			{ payoutId, status: { $nin: ["failed", "cancelled", status] } },
+			{ $set: { status } },
+			{ new: false },
+		);
+		if (!previous) {
+			console.log(`Payout ${payoutId} not found or already ${status}.`);
 			return;
 		}
-		const previousStatus = payout.status;
-		payout.status = status;
-		if (status == "failed" || status == "cancelled") {
-			const user = await UserModel.findOne({ _id: payout.userId });
-			if (user) {
-				user.availableBalance += payout.amount;
-				await user.save();
-			}
+		if (status === "failed" || status === "cancelled") {
+			await UserModel.updateOne({ _id: previous.userId }, { $inc: { availableBalance: previous.amount } });
 		}
 
-		await payout.save();
-
-		if (status === "paid" && previousStatus !== "paid") {
-			await sendPayoutPaidNotification(payout.userId.toString(), payout.amount);
+		if (status === "paid") {
+			await sendPayoutPaidNotification(previous.userId.toString(), previous.amount);
 		}
 	} catch (error) {
 		console.error(`Error updating payout status for payout ID ${payoutId}:`, error);
@@ -239,6 +252,7 @@ const sendPayoutPaidNotification = async (userId: string, amount: number) => {
 const updateRefundStatus = async (refund: Stripe.Refund, status: "pending" | "succeeded" | "failed" | "cancelled") => {
 	try {
 		await delay(5000);
+		if (typeof refund.id !== "string" || !refund.id) return;
 		const payment = await PaymentModel.findOne({ refundId: refund.id });
 		if (!payment) {
 			console.error(`Refund with ID ${refund.id} not found.`);
@@ -267,7 +281,7 @@ const updateRefundStatus = async (refund: Stripe.Refund, status: "pending" | "su
 				return;
 			}
 			await sendRefundEmail(user, payment);
-			await sendRefundNotification(user._id as string, booking, payment.refundAmount);
+			await sendRefundNotification(String(user._id), booking, payment.refundAmount);
 		}
 	} catch (error) {
 		console.error(`Error updating refund status for refund ID ${refund.id}:`, error);
@@ -285,7 +299,7 @@ const sendRefundEmail = async (user: InstanceType<typeof UserModel>, payment: In
 				refundAmount: payment.refundAmount,
 				refundId: `#${payment.refundId.slice(-6).toUpperCase()}`,
 				refundCreated: payment.refundCreated || new Date(),
-				refundStatus: payment.refundStatus,
+				refundStatus: payment.refundStatus ?? "pending",
 				destinationAccountType: payment.destinationDetails.type,
 			}),
 		});

@@ -1,11 +1,9 @@
 import { NextFunction, Request, Response } from "express";
-import path from "path";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import UserModel from "../../dal/models/user.model";
 import { oneSignalApi } from "../service-accounts/onesignal";
-import mongoose from "mongoose";
 import BookingModel from "../../dal/models/booking.model";
 import PaymentModel from "../../dal/models/payment.model";
 import EarningModel from "../../dal/models/earning.model";
@@ -13,17 +11,36 @@ import NotificationModel from "../../dal/models/notification.model";
 import { googleCloudStorage, userProfilesBucket } from "../service-accounts/cloud-storage";
 import {
 	createGoogleCloudTaskPaymentTrigger,
+	refundPaymentIfPaid,
 	sendBookingCancelledNotification,
 	sendBookingCompletedNotification,
 } from "./utils/auth.utils";
-import { SAFE_USER_SELECT, isValidObjectId } from "./utils/booking.utils";
-import { createSession, endSession, refreshSession, toPublicUser } from "./utils/session.utils";
+import { isValidObjectId } from "./utils/booking.utils";
+import { COUNTERPARTY_SELECT } from "./utils/counterparty.utils";
+import { hasRefund } from "./utils/payment.utils";
+import { createSession, endAllSessions, endSession, refreshSession, toPublicUser } from "./utils/session.utils";
+import { JWT_ALGORITHMS, isPendingEmailToken } from "./utils/token.utils";
 import { createCometChatUser, updateCometChatUser } from "./utils/cometchat.util";
-import stripe from "../service-accounts/stripe";
 import { DEMO_ACCOUNT_BLOCKED_MESSAGE, isDemoAccountEmail } from "../../config/demoAccounts";
+import { publicValidationErrors } from "../../middleware/sanitizeInput";
+import { storedFileInfo } from "../../middleware/uploads";
 
 const emailVerificationSecret = process.env.EMAIL_VERIFICATION_SECRET || "";
 const ONE_SIGNAL_APP_ID = process.env.ONE_SIGNAL_APP_ID || "";
+
+// Compared against when the email is unknown, so a missing account takes as long to reject as a wrong password.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("helphive-dummy-password", 10);
+const LOGIN_FAILED_MESSAGE = "Email and password do not match.";
+
+/** Purpose and user of an email-link token, or null when it is not a valid token for that purpose. */
+const verifyEmailLinkToken = (token: unknown, purpose: "verify-email" | "reset-password") => {
+	if (typeof token !== "string" || token.length > 2048) throw new jwt.JsonWebTokenError("invalid token");
+	const decoded = jwt.verify(token, emailVerificationSecret, { algorithms: JWT_ALGORITHMS }) as any;
+	// Links sent before purpose was added carry none; the per-purpose token list on the user still separates them.
+	if (decoded?.purpose !== undefined && decoded.purpose !== purpose) throw new jwt.JsonWebTokenError("wrong purpose");
+	if (!isValidObjectId(decoded?.userId)) throw new jwt.JsonWebTokenError("invalid token");
+	return { token, userId: decoded.userId as string };
+};
 
 export const handleSignup = async (req: Request, res: Response, next: NextFunction) => {
 	try {
@@ -31,7 +48,7 @@ export const handleSignup = async (req: Request, res: Response, next: NextFuncti
 		if (!errors.isEmpty()) {
 			return res.status(400).json({
 				message: "Invalid credentials.",
-				errors: errors.array(),
+				errors: publicValidationErrors(errors),
 			});
 		}
 
@@ -60,7 +77,7 @@ export const handleSignup = async (req: Request, res: Response, next: NextFuncti
 		});
 		await newUser.save();
 
-		await createCometChatUser((newUser._id as string).toString(), email, `${firstName} ${lastName}`);
+		await createCometChatUser(String(newUser._id), email, `${firstName} ${lastName}`);
 
 		next();
 	} catch (error) {
@@ -75,7 +92,7 @@ export const handleSignupProvider = async (req: Request, res: Response, next: Ne
 		if (!errors.isEmpty()) {
 			return res.status(400).json({
 				message: "Invalid credentials.",
-				errors: errors.array(),
+				errors: publicValidationErrors(errors),
 			});
 		}
 
@@ -104,12 +121,12 @@ export const handleSignupProvider = async (req: Request, res: Response, next: Ne
 		});
 		await newUser.save();
 
-		await createCometChatUser((newUser._id as string).toString(), email, `${firstName} ${lastName}`);
+		await createCometChatUser(String(newUser._id), email, `${firstName} ${lastName}`);
 
 		next();
 	} catch (error) {
 		console.error("Error signing up:", error);
-		res.status(500).json({ message: error });
+		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
 
@@ -119,19 +136,16 @@ export const handleLogin = async (req: Request, res: Response) => {
 		if (!errors.isEmpty()) {
 			return res.status(400).json({
 				message: "Email and password do not have a correct format.",
-				errors: errors.array(),
+				errors: publicValidationErrors(errors),
 			});
 		}
 
 		const { email, password } = req.body;
 
+		// The same answer, after the same bcrypt work, whether or not the account exists.
 		const user = await UserModel.findOne({ email });
-		if (!user) {
-			return res.status(401).json({ message: "No user found with provided email." });
-		}
-
-		const passwordMatch = await bcrypt.compare(password, user.password);
-		if (passwordMatch) {
+		const passwordMatch = await bcrypt.compare(password, user?.password ?? DUMMY_PASSWORD_HASH);
+		if (user && passwordMatch) {
 			if (!user.isEmailVerified) {
 				return res.status(403).json({ message: "Email is not verified." });
 			}
@@ -143,9 +157,7 @@ export const handleLogin = async (req: Request, res: Response) => {
 
 			return res.json({ user: toPublicUser(user), accessToken, refreshToken: newRefreshToken });
 		} else {
-			return res.status(401).json({
-				message: "Email and password do not match.",
-			});
+			return res.status(401).json({ message: LOGIN_FAILED_MESSAGE });
 		}
 	} catch (error) {
 		console.error("Error logging in:", error);
@@ -155,7 +167,9 @@ export const handleLogin = async (req: Request, res: Response) => {
 
 export const handleRefreshToken = async (req: Request, res: Response) => {
 	const { refreshToken } = req.body;
-	if (!refreshToken) return res.status(401).json({ message: "Unauthorized access!" });
+	if (!refreshToken || typeof refreshToken !== "string") {
+		return res.status(401).json({ message: "Unauthorized access!" });
+	}
 
 	try {
 		const result = await refreshSession(refreshToken);
@@ -174,7 +188,7 @@ export const handleRefreshToken = async (req: Request, res: Response) => {
 export const handleLogout = async (req: Request, res: Response) => {
 	try {
 		const { refreshToken } = req.body;
-		if (!refreshToken) return res.sendStatus(204);
+		if (!refreshToken || typeof refreshToken !== "string") return res.sendStatus(204);
 		await endSession(refreshToken);
 		res.sendStatus(204);
 	} catch (error) {
@@ -244,9 +258,7 @@ export const handleVerifyEmail = async (req: Request, res: Response) => {
 	}
 
 	try {
-		const secret = emailVerificationSecret;
-		const decoded = jwt.verify(token as string, secret);
-		const { userId } = decoded as { userId: string };
+		const { userId } = verifyEmailLinkToken(token, "verify-email");
 
 		const user = await UserModel.findById(userId);
 		if (!user) {
@@ -257,8 +269,7 @@ export const handleVerifyEmail = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "Email already verified" });
 		}
 
-		const tokenIndex = user.emailVerificationTokens.findIndex((t: string) => t === token);
-		if (tokenIndex === -1) {
+		if (!isPendingEmailToken(user.emailVerificationTokens, token as string)) {
 			return res.status(400).json({ message: "Invalid or expired token" });
 		}
 
@@ -272,24 +283,22 @@ export const handleVerifyEmail = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "Token has expired" });
 		} else if (error instanceof jwt.JsonWebTokenError) {
 			return res.status(400).json({ message: "Invalid token" });
-		} else {
-			res.status(500).json({ message: "Internal Server Error" });
 		}
-		console.error({ error });
+		console.error("Error verifying email:", error);
+		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
 
 export const handleResetPassword = async (req: Request, res: Response) => {
-	const { token } = req.body;
-
-	if (!token) {
-		return res.status(400).json({ message: "Token is required" });
+	const errors = validationResult(req);
+	if (!errors.isEmpty()) {
+		return res.status(400).json({ message: errors.array()[0].msg, errors: publicValidationErrors(errors) });
 	}
 
+	const { token, password } = req.body;
+
 	try {
-		const secret = emailVerificationSecret;
-		const decoded = jwt.verify(token as string, secret);
-		const { userId } = decoded as { userId: string };
+		const { userId } = verifyEmailLinkToken(token, "reset-password");
 
 		const user = await UserModel.findById(userId);
 		if (!user) {
@@ -300,14 +309,23 @@ export const handleResetPassword = async (req: Request, res: Response) => {
 			return res.status(403).json({ message: DEMO_ACCOUNT_BLOCKED_MESSAGE });
 		}
 
-		const tokenIndex = user.resetPasswordTokens.findIndex((t: string) => t === token);
-		if (tokenIndex === -1) {
+		if (!isPendingEmailToken(user.resetPasswordTokens, token)) {
 			return res.status(400).json({ message: "Invalid or expired token" });
 		}
 
-		const { password } = req.body;
+		// Claim every pending link atomically so a token works once even when submitted twice at the same time.
+		const claimed = await UserModel.updateOne(
+			{ _id: user._id, resetPasswordTokens: { $in: user.resetPasswordTokens } },
+			{ $set: { resetPasswordTokens: [] } },
+		);
+		if (claimed.modifiedCount !== 1) {
+			return res.status(400).json({ message: "Invalid or expired token" });
+		}
+
 		user.password = password;
 		user.resetPasswordTokens = [];
+		// Whoever knew the old password is signed out everywhere.
+		endAllSessions(user);
 		await user.save();
 
 		res.status(200).json({ message: "Password reset successfully" });
@@ -316,10 +334,9 @@ export const handleResetPassword = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "Token has expired" });
 		} else if (error instanceof jwt.JsonWebTokenError) {
 			return res.status(400).json({ message: "Invalid token" });
-		} else {
-			res.status(500).json({ message: "Internal Server Error" });
 		}
-		console.error({ error });
+		console.error("Error resetting password:", error);
+		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
 
@@ -336,8 +353,7 @@ export const handleOneSignalSetup = async (user: any) => {
 
 export const handleCompleteBooking = async (req: Request, res: Response) => {
 	try {
-		const userEmail = req.user;
-		const user = (await UserModel.findOne({ email: userEmail })) as unknown as any;
+		const user = await UserModel.findOne({ email: req.user });
 		if (!user) {
 			return res.status(404).json({ message: "User not found." });
 		}
@@ -346,17 +362,17 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 		if (!bookingId) {
 			return res.status(400).json({ message: "Booking ID is required." });
 		}
+		if (!isValidObjectId(bookingId)) {
+			return res.status(400).json({ message: "Invalid booking id." });
+		}
 
-		const booking =
-			(await BookingModel.findById(bookingId).populate("providerId").populate("userId").exec()) || undefined;
-
+		const booking = await BookingModel.findById(bookingId).exec();
 		if (!booking || !booking.providerId || !booking.userId) {
 			return res.status(404).json({ message: "Booking not found." });
 		}
 
-		if (
-			![booking.userId._id.toString(), booking.providerId._id.toString()].includes((user as any)._id.toString())
-		) {
+		const requesterId = String(user._id);
+		if (![booking.userId.toString(), booking.providerId.toString()].includes(requesterId)) {
 			return res.status(403).json({ message: "User not authorized to complete this booking." });
 		}
 
@@ -369,29 +385,37 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 			return res.status(400).json({ message: "Payment not found for this booking." });
 		}
 
-		// REQUIRES ATTENTION
-		// const fiveDaysFromNow = new Date();
-		// fiveDaysFromNow.setDate(fiveDaysFromNow.getDate() + 5);
-		const fiveMinutesFromNow = new Date();
-		fiveMinutesFromNow.setSeconds(fiveMinutesFromNow.getSeconds() + 30);
-		await createGoogleCloudTaskPaymentTrigger(bookingId, fiveMinutesFromNow);
+		// Claim the transition atomically: a double tap or both parties completing at once creates one earning.
+		const completed = await BookingModel.findOneAndUpdate(
+			{ _id: booking._id, status: "in progress" },
+			{ $set: { status: "completed", completedAt: new Date(), completedBy: user._id } },
+			{ new: true },
+		).exec();
+		if (!completed) {
+			return res.status(400).json({ message: "Booking is not in progress." });
+		}
 
-		await EarningModel.create({
-			bookingId: booking._id,
-			amount: payment.amount * 0.95,
-			date: new Date(),
-		});
+		let earning: InstanceType<typeof EarningModel> | null = null;
+		try {
+			earning = await EarningModel.create({
+				bookingId: booking._id,
+				amount: payment.amount * 0.95,
+				date: new Date(),
+			});
+			// REQUIRES ATTENTION: earnings are released 30 seconds after completion (meant to be several days).
+			const releaseAt = new Date(Date.now() + 30 * 1000);
+			await createGoogleCloudTaskPaymentTrigger(String(booking._id), releaseAt);
+		} catch (error) {
+			// Without its release task the earning would never be paid; put the booking back so it can be retried.
+			await BookingModel.updateOne(
+				{ _id: booking._id, status: "completed" },
+				{ $set: { status: "in progress", completedAt: null, completedBy: null } },
+			);
+			if (earning) await EarningModel.deleteOne({ _id: earning._id });
+			throw error;
+		}
 
-		booking.status = "completed";
-		booking.completedAt = new Date();
-		booking.completedBy = user._id;
-		await booking.save();
-
-		await sendBookingCompletedNotification(
-			booking.userId._id?.toString(),
-			booking.providerId._id?.toString(),
-			booking,
-		);
+		await sendBookingCompletedNotification(booking.userId.toString(), booking.providerId.toString(), completed);
 
 		res.status(200).json({ message: "Booking has been completed." });
 	} catch (error) {
@@ -404,8 +428,7 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 
 export const handleCancelBooking = async (req: Request, res: Response) => {
 	try {
-		const userEmail = req.user;
-		const user = await UserModel.findOne({ email: userEmail });
+		const user = await UserModel.findOne({ email: req.user });
 		if (!user) {
 			return res.status(404).json({ message: "User not found." });
 		}
@@ -414,56 +437,41 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 		if (!bookingId) {
 			return res.status(400).json({ message: "Booking ID is required." });
 		}
+		if (!isValidObjectId(bookingId)) {
+			return res.status(400).json({ message: "Invalid booking id." });
+		}
 
-		const booking =
-			(await BookingModel.findById(bookingId).populate("providerId").populate("userId").exec()) || undefined;
-
+		const booking = await BookingModel.findById(bookingId).exec();
 		if (!booking || !booking.userId) {
 			return res.status(404).json({ message: "Booking not found." });
 		}
 
-		if (
-			![booking.userId._id.toString(), booking.providerId?._id.toString()].includes((user as any)._id.toString())
-		) {
+		const requesterId = String(user._id);
+		if (![booking.userId.toString(), booking.providerId?.toString()].includes(requesterId)) {
 			return res.status(403).json({ message: "User not authorized to cancel this booking." });
 		}
 
+		const notPending = { message: "Booking cannot be cancelled as it has already started or is not pending." };
 		if (booking.status !== "pending") {
-			return res
-				.status(400)
-				.json({ message: "Booking cannot be cancelled as it has already started or is not pending." });
+			return res.status(400).json(notPending);
 		}
 
-		booking.status = "cancelled";
-		booking.cancelledAt = new Date();
-		booking.cancelledBy = user._id as mongoose.Types.ObjectId;
-		await booking.save();
+		const cancelled = await BookingModel.findOneAndUpdate(
+			{ _id: booking._id, status: "pending" },
+			{ $set: { status: "cancelled", cancelledAt: new Date(), cancelledBy: user._id } },
+			{ new: true },
+		).exec();
+		if (!cancelled) {
+			return res.status(400).json(notPending);
+		}
 
 		await sendBookingCancelledNotification(
-			booking.userId._id?.toString(),
-			booking.providerId ? booking.providerId._id.toString() : "",
-			booking,
+			cancelled.userId.toString(),
+			cancelled.providerId ? cancelled.providerId.toString() : "",
+			cancelled,
 		);
 
-		const payment = await PaymentModel.findOne({ bookingId: booking._id });
-		if (payment && payment.paymentIntentId && payment.status === "completed") {
-			const paymentIntent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
-			if (paymentIntent.status === "succeeded") {
-				const refund = await stripe.refunds.create({
-					payment_intent: payment.paymentIntentId,
-				});
-				payment.refundStatus = "pending";
-				payment.refundId = refund.id;
-				payment.refundAmount = refund.amount / 100;
-				payment.refundCreated = new Date(refund.created * 1000);
-				payment.destinationDetails = {
-					type: refund.destination_details?.type,
-				};
-				await payment.save();
-			} else {
-				console.log(`Payment intent ${payment.paymentIntentId} was not paid, no refund needed.`);
-			}
-		}
+		await refundPaymentIfPaid(String(cancelled._id));
 
 		res.status(200).json({ message: "Booking has been cancelled." });
 	} catch (error) {
@@ -475,6 +483,10 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 };
 
 export const handleUpdateProfile = async (req: Request, res: Response) => {
+	const errors = validationResult(req);
+	if (!errors.isEmpty()) {
+		return res.status(400).json({ message: errors.array()[0].msg, errors: publicValidationErrors(errors) });
+	}
 	try {
 		const userEmail = req.user;
 		const user = await UserModel.findOne({ email: userEmail });
@@ -495,15 +507,21 @@ export const handleUpdateProfile = async (req: Request, res: Response) => {
 		if (req.files && (req.files as { [fieldname: string]: Express.Multer.File[] }).profile) {
 			const profileFile = (req.files as { [fieldname: string]: Express.Multer.File[] }).profile[0];
 			const userId = (user as any)._id.toString();
-			const fileExtension = path.extname(profileFile.originalname);
-			const destinationPath = `${userId}/profile${fileExtension}`;
+			const { extension, contentType } = storedFileInfo("profile", profileFile);
+			const destinationPath = `${userId}/profile.${extension}`;
 
 			try {
-				if (user.profile) {
-					await googleCloudStorage.bucket(userProfilesBucket).file(user.profile).delete();
+				if (user.profile && user.profile !== destinationPath) {
+					await googleCloudStorage
+						.bucket(userProfilesBucket)
+						.file(user.profile)
+						.delete({ ignoreNotFound: true });
 				}
 
-				await googleCloudStorage.bucket(userProfilesBucket).file(destinationPath).save(profileFile.buffer);
+				await googleCloudStorage
+					.bucket(userProfilesBucket)
+					.file(destinationPath)
+					.save(profileFile.buffer, { contentType, resumable: false });
 				user.profile = destinationPath;
 				await updateCometChatUser(userId, destinationPath);
 			} catch (error) {
@@ -657,8 +675,8 @@ export const handleGetBookingReceipt = async (req: Request, res: Response) => {
 		}
 
 		const booking: any = await BookingModel.findById(bookingId)
-			.populate("userId", SAFE_USER_SELECT)
-			.populate("providerId", SAFE_USER_SELECT)
+			.populate("userId", COUNTERPARTY_SELECT)
+			.populate("providerId", COUNTERPARTY_SELECT)
 			.exec();
 		if (!booking) {
 			return res.status(404).json({ message: "Booking not found." });
@@ -679,7 +697,7 @@ export const handleGetBookingReceipt = async (req: Request, res: Response) => {
 		const subtotal = booking.rate * booking.hours;
 		// payment.date is set once when the payment is created; updatedAt would move on refunds.
 		const paidAt = payment && payment.status === "completed" ? payment.date : null;
-		const hasRefund = !!payment?.refundId;
+		const refunded = hasRefund(payment);
 
 		res.status(200).json({
 			receipt: {
@@ -698,10 +716,9 @@ export const handleGetBookingReceipt = async (req: Request, res: Response) => {
 							status: payment.status,
 							amount: payment.amount,
 							paidAt,
-							refundStatus: hasRefund ? payment.refundStatus : null,
-							refundAmount: payment.refundAmount ?? 0,
-							refundedAt:
-								hasRefund && payment.refundStatus === "succeeded" ? payment.refundCreated : null,
+							refundStatus: refunded ? payment.refundStatus : null,
+							refundAmount: refunded ? (payment.refundAmount ?? 0) : 0,
+							refundedAt: refunded && payment.refundStatus === "succeeded" ? payment.refundCreated : null,
 						}
 					: null,
 				customer: {
@@ -750,7 +767,7 @@ export const handleMarkNotificationAsRead = async (req: Request, res: Response) 
 				message: "User not found.",
 			});
 		}
-		if (notification.userId.toString() !== (user._id as string).toString()) {
+		if (notification.userId.toString() !== String(user._id)) {
 			return res.status(403).json({
 				message: "User not authorized to mark this notification as read.",
 			});

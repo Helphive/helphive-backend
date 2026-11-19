@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import multer from "multer";
 
 import {
 	handleLogin,
@@ -22,7 +21,7 @@ import {
 	handleGetBookingReceipt,
 } from "../../controllers/user-controllers/auth.controller";
 
-import { createContact, sendMagicLinkEmail } from "../../controllers/email.controller";
+import { createContact, markSignupFlow, sendMagicLinkEmail } from "../../controllers/email.controller";
 
 import userRoute from "./user.route";
 import providerRoute from "./provider.route";
@@ -37,29 +36,67 @@ import {
 import { verifyJWT } from "../../middleware/verifyJWT";
 import { verifyRoles } from "../../middleware/verfiyRoles";
 import { blockDemoAccounts } from "../../middleware/blockDemoAccounts";
+import {
+	bookingActionLimiter,
+	loginLimiters,
+	refreshLimiters,
+	resetPasswordLimiter,
+	signupLimiter,
+	uploadLimiter,
+	verifyEmailLimiter,
+} from "../../middleware/rateLimit";
+import { uploadFields } from "../../middleware/uploads";
 
 const authRoute = express.Router();
-const upload = multer();
 
-authRoute.post("/signup", validateSignupFields, handleSignup, createContact, sendMagicLinkEmail);
-authRoute.post("/provider-signup", validateSignupFields, handleSignupProvider, createContact, sendMagicLinkEmail);
-authRoute.post("/login", validateLoginFields, handleLogin);
+authRoute.post(
+	"/signup",
+	signupLimiter,
+	validateSignupFields,
+	handleSignup,
+	markSignupFlow,
+	createContact,
+	sendMagicLinkEmail,
+);
+authRoute.post(
+	"/provider-signup",
+	signupLimiter,
+	validateSignupFields,
+	handleSignupProvider,
+	markSignupFlow,
+	createContact,
+	sendMagicLinkEmail,
+);
+authRoute.post("/login", ...loginLimiters, validateLoginFields, handleLogin);
 authRoute.post("/logout", handleLogout);
-authRoute.post("/refresh", handleRefreshToken);
+authRoute.post("/refresh", ...refreshLimiters, handleRefreshToken);
 authRoute.get("/user-info", verifyJWT, verifyRoles("User", "Provider"), handleGetUserInfo);
-authRoute.get("/verify-email", handleVerifyEmail);
-authRoute.post("/reset-password", validateResetPasswordFields, handleResetPassword);
+authRoute.get("/verify-email", verifyEmailLimiter, handleVerifyEmail);
+authRoute.post("/reset-password", resetPasswordLimiter, validateResetPasswordFields, handleResetPassword);
 authRoute.use("/reset-password", express.static(path.join(__dirname, "..", "..", "views", "Reset Password")));
 authRoute.use("/user", verifyJWT, verifyRoles("User"), userRoute);
 authRoute.use("/provider", verifyJWT, verifyRoles("Provider"), providerRoute);
-authRoute.post("/complete-booking", verifyJWT, verifyRoles("User", "Provider"), handleCompleteBooking);
-authRoute.post("/cancel-booking", verifyJWT, verifyRoles("User", "Provider"), handleCancelBooking);
+authRoute.post(
+	"/complete-booking",
+	verifyJWT,
+	verifyRoles("User", "Provider"),
+	bookingActionLimiter,
+	handleCompleteBooking,
+);
+authRoute.post(
+	"/cancel-booking",
+	verifyJWT,
+	verifyRoles("User", "Provider"),
+	bookingActionLimiter,
+	handleCancelBooking,
+);
 authRoute.post(
 	"/profile",
 	verifyJWT,
 	verifyRoles("User", "Provider"),
 	blockDemoAccounts,
-	upload.fields([{ name: "profile", maxCount: 1 }]),
+	uploadLimiter,
+	uploadFields(["profile"]),
 	validateUpdateProfileFields,
 	handleUpdateProfile,
 );

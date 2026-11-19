@@ -3,6 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
 import mongoose from "mongoose";
 import connectDB from "./config/dbConn";
 import corsOptions from "./config/corsOptions";
@@ -11,6 +12,8 @@ import { SERVER_BASE_URL } from "./config/config";
 import { logger } from "./middleware/logEvents";
 import { credentials } from "./middleware/credentials";
 import { errorHandler } from "./middleware/errorHandler";
+import { globalLimiter } from "./middleware/rateLimit";
+import { rejectOperatorKeys } from "./middleware/sanitizeInput";
 
 dotenv.config();
 
@@ -18,8 +21,7 @@ import authRoute from "./routes/user-routes/auth.route";
 import adminRoute from "./routes/admin.route";
 import emailRoute from "./routes/email.route";
 import webhookRoute from "./routes/webhook-routes/webhook.route";
-import { Server, WebSocket as WS } from "ws";
-import { handleProviderAvailabilityWebSocket } from "./controllers/user-controllers/provider-websocket";
+import { createProviderAvailabilityUpgradeHandler } from "./controllers/user-controllers/provider-websocket";
 
 if (
 	!process.env.PORT ||
@@ -39,8 +41,20 @@ if (
 	throw `Abort: You need to define variables in the .env file.`;
 }
 
+for (const name of ["STRIPE_CONNECTED_WEBHOOK_SECRET", "GOOGLE_CLOUD_TASKS_SECRET", "ADMIN_ACCESS_TOKEN_SECRET"]) {
+	if (!process.env[name]) console.warn(`${name} is not set; see the security notes in .env.example.`);
+}
+
+// Cloud Run sits behind one Google front end hop, which appends the real client address to X-Forwarded-For.
+// Trusting exactly that hop makes req.ip the client and ignores whatever a client puts in the header itself.
+const TRUST_PROXY_HOPS = Number.parseInt(process.env.TRUST_PROXY_HOPS ?? "1", 10);
+const trustProxyHops = Number.isInteger(TRUST_PROXY_HOPS) && TRUST_PROXY_HOPS >= 0 ? TRUST_PROXY_HOPS : 1;
+
 const app = express();
 const PORT = process.env.PORT || 8080;
+
+app.set("trust proxy", trustProxyHops);
+app.disable("x-powered-by");
 
 const server = app.listen(PORT, () => {
 	console.log(`Server is running at ${SERVER_BASE_URL}`);
@@ -48,15 +62,40 @@ const server = app.listen(PORT, () => {
 
 connectDB();
 
+app.use(
+	helmet({
+		// The only HTML is the home, 404 and reset-password pages: same-origin scripts and styles plus Google Fonts.
+		contentSecurityPolicy: {
+			directives: {
+				defaultSrc: ["'self'"],
+				scriptSrc: ["'self'"],
+				// public/index.css imports Plus Jakarta Sans from Google Fonts.
+				styleSrc: ["'self'", "https://fonts.googleapis.com"],
+				fontSrc: ["'self'", "https://fonts.gstatic.com"],
+				imgSrc: ["'self'", "data:"],
+				connectSrc: ["'self'"],
+				formAction: ["'self'"],
+				frameAncestors: ["'none'"],
+				objectSrc: ["'none'"],
+				baseUri: ["'self'"],
+			},
+		},
+		crossOriginResourcePolicy: { policy: "same-site" },
+		// Reset-password links carry their token in the query string; never send it on as a referrer.
+		referrerPolicy: { policy: "no-referrer" },
+	}),
+);
 app.use(logger);
 app.use(credentials);
 app.use(cors(corsOptions));
-app.use(express.urlencoded({ extended: false }));
+app.use(globalLimiter);
+app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 
 app.use("/webhook", webhookRoute);
 
-app.use(express.json());
+app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
+app.use(rejectOperatorKeys);
 
 app.use(
 	express.static(path.join(__dirname, "public"), {
@@ -77,8 +116,8 @@ app.use("/admin", adminRoute);
 app.use("/email", emailRoute);
 
 app.get("/stripe-onboarding", (req: Request, res: Response) => {
-	const refresh = req.query.refresh;
-	const deepLink = `helphivenow://stripe-onboarding?refresh=${refresh}`;
+	// Back into the app after Stripe onboarding. Only the one known flag is passed on.
+	const deepLink = `helphivenow://stripe-onboarding?refresh=${req.query.refresh === "true" ? "true" : "false"}`;
 	res.redirect(deepLink);
 });
 
@@ -99,21 +138,4 @@ mongoose.connection.once("open", () => {
 	console.log("Connected to MongoDB");
 });
 
-const wsServer = new Server({ server });
-wsServer.on("listening", () => {
-	console.log(`WebSocket server is listening on the same port as the HTTP server`);
-});
-wsServer.on("connection", (ws: WS, req: Request) => {
-	console.log("Connection established.");
-	const url = new URL(req.url || "", SERVER_BASE_URL);
-	const userEmail = url.searchParams.get("email");
-	if (!userEmail) {
-		ws.send(JSON.stringify({ error: "User email not found in URL parameters." }));
-		ws.close();
-		return;
-	}
-	console.log(url.pathname);
-	if (url.pathname.startsWith("/provider-availability")) {
-		handleProviderAvailabilityWebSocket(ws, userEmail);
-	}
-});
+server.on("upgrade", createProviderAvailabilityUpgradeHandler(trustProxyHops));

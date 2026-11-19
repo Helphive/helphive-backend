@@ -82,6 +82,24 @@ export const setEventWriter = (next: typeof writer) => {
 	return previous;
 };
 
+type EventListener = (doc: Record<string, unknown>) => void;
+const listeners: EventListener[] = [];
+
+/** Called with each event after it is written (the risk engine, lib/risk/engine.ts). Listeners must not throw. */
+export const onEventRecorded = (listener: EventListener) => {
+	listeners.push(listener);
+};
+
+const notify = (doc: Record<string, unknown>) => {
+	for (const listener of listeners) {
+		try {
+			listener(doc);
+		} catch (error) {
+			log.error("An event listener failed", error);
+		}
+	}
+};
+
 /**
  * Records an event in the background. Context (IP, user agent, app headers, request id, signed-in actor) comes from
  * `req` when given, else from the current request. Returns immediately; never throws.
@@ -95,10 +113,12 @@ export const emitEvent = (input: EventInput, req?: Request): void => {
 		return;
 	}
 	setImmediate(() => {
-		writer(doc).catch((error: any) => {
-			if (error?.code === DUPLICATE_KEY) return;
-			log.error(`Could not record event ${input.type}`, error);
-		});
+		writer(doc)
+			.then(() => notify(doc))
+			.catch((error: any) => {
+				if (error?.code === DUPLICATE_KEY) return;
+				log.error(`Could not record event ${input.type}`, error);
+			});
 	});
 };
 

@@ -53,6 +53,7 @@ import {
 import { optionalAdminJWT, verifyAdminJWT } from "../middleware/verifyAdminJWT";
 import { audited } from "../middleware/audited";
 import { registerOperationsRoutes } from "./adminOperations.route";
+import { registerRiskRoutes } from "./adminRisk.route";
 import { requirePermission } from "../middleware/requirePermission";
 import {
 	demoAdminRequestLimiter,
@@ -209,5 +210,7 @@ adminRoute.post(
 // Operations console: overview, users, bookings, payments, earnings, payouts, live view, search, notes
 // (routes/adminOperations.route.ts). Registered here so the demo guard and masking above cover them.
 registerOperationsRoutes(adminRoute);
+// Fraud and risk (routes/adminRisk.route.ts).
+registerRiskRoutes(adminRoute);
 
 export default adminRoute;

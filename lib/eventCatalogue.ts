@@ -204,6 +204,82 @@ export const EVENT_CATALOGUE = {
 		subjects: ["providerId", "payoutId"],
 		properties: { status: "failed | cancelled", amount: "amount" },
 	},
+	"payout.held": {
+		description: "A payout request was refused because the provider has a risk payout hold.",
+		subjects: ["providerId"],
+		properties: { amount: "amount asked for", hold: "hold | review" },
+	},
+	"earning.held": {
+		description:
+			"An earning release was kept back because the provider has a risk payout hold; it is rescheduled when the hold is released.",
+		subjects: ["providerId", "bookingId", "earningId"],
+		properties: { amount: "earning amount" },
+	},
+	"risk.rule_fired": {
+		description: "A risk rule fired for a person (recorded once per rule, person and day).",
+		subjects: ["userId"],
+		properties: {
+			ruleKey: "rule",
+			mode: "observe | enforce",
+			severity: "low..critical",
+			weight: "points",
+			enforced: "whether its actions were carried out",
+		},
+	},
+	"risk.case_opened": {
+		description: "A risk review case was opened by a rule in enforce mode or by an admin.",
+		subjects: ["userId (when the case is about a person)"],
+		properties: { caseId: "case", severity: "severity", rules: "rule keys", by: "rule | admin" },
+	},
+	"risk.case_updated": {
+		description: "An admin assigned a case, changed its status, added a note or acted from it.",
+		subjects: ["userId (when known)"],
+		properties: { caseId: "case", change: "assigned | status | note | action name" },
+	},
+	"risk.case_decided": {
+		description: "An admin cleared or confirmed a case.",
+		subjects: ["userId (when known)"],
+		properties: { caseId: "case", outcome: "cleared | confirmed" },
+	},
+	"risk.hold_placed": {
+		description: "A payout hold was placed on a provider (rule in enforce mode, admin or case).",
+		subjects: ["userId", "providerId"],
+		properties: {
+			holdId: "hold",
+			kind: "hold | review_before_payout",
+			by: "rule | admin | case",
+			ruleKey: "rule, when by a rule",
+		},
+	},
+	"risk.hold_released": {
+		description: "An admin released a payout hold.",
+		subjects: ["userId", "providerId"],
+		properties: { holdId: "hold", kind: "kind", rescheduledEarnings: "earning releases scheduled again" },
+	},
+	"risk.rule_changed": {
+		description: "An admin created or changed a risk rule.",
+		subjects: [],
+		properties: { ruleKey: "rule", fields: "names of the fields changed", mode: "the mode after the change" },
+	},
+	"risk.list_changed": {
+		description: "An admin added, changed the expiry of, or removed a block or allow list entry.",
+		subjects: [],
+		properties: {
+			entryId: "entry",
+			list: "block | allow",
+			kind: "email, email_domain, device, ip, ip_range, phone",
+			change: "added | expiry_changed | removed",
+		},
+	},
+	"risk.attempt_blocked": {
+		description: "A sign-up, sign-in or booking was refused by the block list (the person sees a generic message).",
+		subjects: [],
+		properties: {
+			point: "signup | signin | booking",
+			kinds: "kinds of entries that matched",
+			entryIds: "matching entries",
+		},
+	},
 	"admin.action_taken": {
 		description:
 			"An admin write with no business event of its own (notes, ending sessions, resending verification). The audit log has the details.",

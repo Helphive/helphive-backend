@@ -47,6 +47,18 @@ export const AUDIT_ACTIONS = {
 	"bookings.resolved_completed": "Marked a stuck in-progress booking completed (the provider's earning is created).",
 	"bookings.resolved_cancelled": "Cancelled a stuck in-progress booking (full refund or none, as chosen).",
 	"payments.refunded": "Refunded a payment in full or in part through Stripe.",
+	"risk.rule_created": "Created a risk rule.",
+	"risk.rule_updated": "Changed a risk rule (thresholds, weight, severity, actions or mode).",
+	"risk.case_opened": "Opened a risk review case (an admin, or a rule in enforce mode as the system).",
+	"risk.case_updated": "Assigned a risk case, changed its status or added a note.",
+	"risk.case_decided": "Cleared or confirmed a risk case, with a reason.",
+	"risk.hold_placed":
+		"Placed a payout hold on a provider (an admin, a case, or a rule in enforce mode as the system).",
+	"risk.hold_released": "Released a payout hold; earnings it kept back are rescheduled.",
+	"risk.list_entry_added": "Added a block or allow list entry.",
+	"risk.list_entry_updated": "Changed the expiry of a block or allow list entry.",
+	"risk.list_entry_removed": "Removed a block or allow list entry.",
+	"risk.user_suspended": "A risk rule in enforce mode suspended an account (actor: system).",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTIONS;

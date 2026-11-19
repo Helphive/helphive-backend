@@ -9,6 +9,7 @@ import { EXPIRED_CANCELLATION_REASON } from "../user-controllers/utils/booking.u
 import { describeBooking, formatMoney, isValidObjectId } from "../user-controllers/utils/booking.utils";
 import { refundPaymentIfPaid } from "../user-controllers/utils/auth.utils";
 import { emitEvent } from "../../lib/events";
+import { blocksEarningRelease, recordBlocked } from "../../lib/risk/holds";
 import log from "../../lib/logger";
 
 export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: Response) => {
@@ -40,6 +41,18 @@ export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: R
 
 		if (earning.status === "completed") {
 			return res.status(200).json({ message: "Earning already processed" });
+		}
+
+		// A risk payout hold keeps the earning pending; releasing the hold schedules this task again.
+		if (blocksEarningRelease(provider.payoutHold)) {
+			recordBlocked(provider._id, "earnings");
+			emitEvent({
+				type: "earning.held",
+				actor: { type: "system" },
+				subjects: { providerId: provider._id, bookingId: booking._id, earningId: earning._id },
+				properties: { amount: earning.amount },
+			});
+			return res.status(200).json({ message: "Earning not released: provider payouts are on hold" });
 		}
 
 		const account = await stripe.accounts.retrieve(provider.stripeConnectedAccountId);

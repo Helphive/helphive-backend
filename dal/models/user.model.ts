@@ -65,6 +65,8 @@ interface IUser extends Document {
 	lastActiveAt?: Date | null;
 	/** When currentLocation was last written (websocket or HTTP availability update). */
 	locationUpdatedAt?: Date | null;
+	/** Set while a risk payout hold is active (lib/risk/holds.ts): "hold" stops payouts and earning releases, "review" the next payout. */
+	payoutHold?: "hold" | "review" | null;
 }
 
 // Credentials that must never leave the server. Internal code reads them from the document itself.
@@ -78,7 +80,7 @@ export const USER_SECRET_FIELDS = [
 ] as const;
 
 // Admin-only fields: the person never sees who suspended them or the admin's reason.
-export const USER_ADMIN_ONLY_FIELDS = ["suspendedBy", "suspendedReason"] as const;
+export const USER_ADMIN_ONLY_FIELDS = ["suspendedBy", "suspendedReason", "payoutHold"] as const;
 
 // Projection for populating or lean-querying users, which bypass the schema transform below.
 export const SAFE_USER_SELECT = [...USER_SECRET_FIELDS, ...USER_ADMIN_ONLY_FIELDS]
@@ -176,6 +178,7 @@ const userSchema = new Schema<IUser>(
 		suspendedReason: { type: String },
 		lastActiveAt: { type: Date },
 		locationUpdatedAt: { type: Date },
+		payoutHold: { type: String, enum: ["hold", "review"] },
 	},
 	{
 		timestamps: true,

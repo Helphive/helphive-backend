@@ -13,7 +13,8 @@ export type EmailTemplate =
 	| "refund"
 	| "audience-contact"
 	| "support-message"
-	| "announcement";
+	| "announcement"
+	| "observability-alert";
 
 export type EmailResult =
 	| { status: "sent"; messageId: string | null }

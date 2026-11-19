@@ -56,6 +56,7 @@ import { registerOperationsRoutes } from "./adminOperations.route";
 import { registerAnalyticsRoutes } from "./adminAnalytics.route";
 import { registerRiskRoutes } from "./adminRisk.route";
 import { registerFinanceRoutes } from "./adminFinance.route";
+import { registerObservabilityRoutes } from "./adminObservability.route";
 import { requirePermission } from "../middleware/requirePermission";
 import {
 	demoAdminRequestLimiter,
@@ -218,5 +219,7 @@ registerAnalyticsRoutes(adminRoute);
 registerRiskRoutes(adminRoute);
 // Finance, support and platform: reconciliation, disputes, settings, cases, notifications (routes/adminFinance.route.ts).
 registerFinanceRoutes(adminRoute);
+// Observability console under /observability (routes/adminObservability.route.ts).
+registerObservabilityRoutes(adminRoute);
 
 export default adminRoute;

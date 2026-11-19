@@ -64,50 +64,53 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
 	const event = verifyStripeEvent(req, res, endpointSecret, "STRIPE_WEBHOOK_SECRET");
 	if (!event) return;
 
-	await dispatch("platform", event, (delivery) => {
-		switch (event.type) {
-			case "payment_intent.succeeded":
-				trackWebhookWork(delivery, updatePaymentStatus(event.data.object.id, "completed"));
-				// Stripe's risk assessment for the risk module: not awaited, never throws, no effect on the outcome.
-				void recordChargeAssessment(event.data.object, "succeeded");
-				break;
-			case "payment_intent.payment_failed":
-				// Recorded as an event only; the booking stays unpaid and the customer can try again, as before.
-				trackWebhookWork(delivery, recordPaymentFailed(event.data.object));
-				void recordChargeAssessment(event.data.object, "failed");
-				break;
-			case "refund.updated": {
-				const refund = event.data.object;
-				if (refund.status === "succeeded") {
-					trackWebhookWork(delivery, updateRefundStatus(refund, "succeeded"));
-				} else if (refund.status === "failed") {
-					trackWebhookWork(delivery, updateRefundStatus(refund, "failed"));
-				} else if (refund.status === "canceled") {
-					trackWebhookWork(delivery, updateRefundStatus(refund, "cancelled"));
-				} else {
-					delivery.finish("ignored", { note: `refund status ${refund.status}` });
-				}
-				break;
-			}
-			case "refund.failed":
-				trackWebhookWork(delivery, updateRefundStatus(event.data.object, "failed"));
-				break;
-			// Card disputes (controllers/webhook-controllers/disputes.webhook.ts).
-			case "charge.dispute.created":
-			case "charge.dispute.updated":
-			case "charge.dispute.funds_withdrawn":
-			case "charge.dispute.funds_reinstated":
-			case "charge.dispute.closed":
-				trackWebhookWork(delivery, recordDisputeEvent(event));
-				break;
-
-			default:
-				log.info(`Unhandled Stripe event type ${event.type}`);
-				delivery.finish("ignored");
-		}
-	});
+	await dispatch("platform", event, (delivery) => handlePlatformEvent(event, delivery));
 
 	return res.status(200).json({ message: "Stripe webhook received" });
+};
+
+/** Runs the platform endpoint's handler for a verified event (also used by the console's replay). */
+export const handlePlatformEvent = (event: Stripe.Event, delivery: WebhookDelivery) => {
+	switch (event.type) {
+		case "payment_intent.succeeded":
+			trackWebhookWork(delivery, updatePaymentStatus(event.data.object.id, "completed"));
+			// Stripe's risk assessment for the risk module: not awaited, never throws, no effect on the outcome.
+			void recordChargeAssessment(event.data.object, "succeeded");
+			break;
+		case "payment_intent.payment_failed":
+			// Recorded as an event only; the booking stays unpaid and the customer can try again, as before.
+			trackWebhookWork(delivery, recordPaymentFailed(event.data.object));
+			void recordChargeAssessment(event.data.object, "failed");
+			break;
+		case "refund.updated": {
+			const refund = event.data.object;
+			if (refund.status === "succeeded") {
+				trackWebhookWork(delivery, updateRefundStatus(refund, "succeeded"));
+			} else if (refund.status === "failed") {
+				trackWebhookWork(delivery, updateRefundStatus(refund, "failed"));
+			} else if (refund.status === "canceled") {
+				trackWebhookWork(delivery, updateRefundStatus(refund, "cancelled"));
+			} else {
+				delivery.finish("ignored", { note: `refund status ${refund.status}` });
+			}
+			break;
+		}
+		case "refund.failed":
+			trackWebhookWork(delivery, updateRefundStatus(event.data.object, "failed"));
+			break;
+		// Card disputes (controllers/webhook-controllers/disputes.webhook.ts).
+		case "charge.dispute.created":
+		case "charge.dispute.updated":
+		case "charge.dispute.funds_withdrawn":
+		case "charge.dispute.funds_reinstated":
+		case "charge.dispute.closed":
+			trackWebhookWork(delivery, recordDisputeEvent(event));
+			break;
+
+		default:
+			log.info(`Unhandled Stripe event type ${event.type}`);
+			delivery.finish("ignored");
+	}
 };
 
 const updatePaymentStatus = async (
@@ -251,27 +254,30 @@ export const handleStripeConnectedPayoutsWebhook = async (req: Request, res: Res
 	const event = verifyStripeEvent(req, res, connectedEndpointSecret, "STRIPE_CONNECTED_WEBHOOK_SECRET");
 	if (!event) return;
 
-	await dispatch("connected", event, (delivery) => {
-		switch (event.type) {
-			case "payout.paid":
-				trackWebhookWork(delivery, updatePayoutStatus(event.data.object.id, "paid"));
-				break;
-
-			case "payout.failed":
-				trackWebhookWork(delivery, updatePayoutStatus(event.data.object.id, "failed"));
-				break;
-
-			case "payout.canceled":
-				trackWebhookWork(delivery, updatePayoutStatus(event.data.object.id, "cancelled"));
-				break;
-
-			default:
-				log.info(`Unhandled Stripe event type ${event.type}`);
-				delivery.finish("ignored");
-		}
-	});
+	await dispatch("connected", event, (delivery) => handleConnectedEvent(event, delivery));
 
 	return res.status(200).json({ message: "Stripe webhook received" });
+};
+
+/** Runs the connected-accounts endpoint's handler for a verified event (also used by the console's replay). */
+export const handleConnectedEvent = (event: Stripe.Event, delivery: WebhookDelivery) => {
+	switch (event.type) {
+		case "payout.paid":
+			trackWebhookWork(delivery, updatePayoutStatus(event.data.object.id, "paid"));
+			break;
+
+		case "payout.failed":
+			trackWebhookWork(delivery, updatePayoutStatus(event.data.object.id, "failed"));
+			break;
+
+		case "payout.canceled":
+			trackWebhookWork(delivery, updatePayoutStatus(event.data.object.id, "cancelled"));
+			break;
+
+		default:
+			log.info(`Unhandled Stripe event type ${event.type}`);
+			delivery.finish("ignored");
+	}
 };
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

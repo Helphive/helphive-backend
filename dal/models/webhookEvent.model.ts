@@ -24,6 +24,8 @@ export interface WebhookEventDoc {
 	deliveries: number;
 	lastDeliveryAt: Date;
 	requestId?: string | null;
+	/** Console replays (observability module): who, when and what came of each. */
+	replays?: { at: Date; by: string | null; outcome: string; error?: string | null; requestId?: string | null }[];
 }
 
 const webhookEventSchema = new Schema<WebhookEventDoc>(
@@ -43,6 +45,7 @@ const webhookEventSchema = new Schema<WebhookEventDoc>(
 		deliveries: { type: Number, default: 1 },
 		lastDeliveryAt: { type: Date, required: true },
 		requestId: { type: String, default: null },
+		replays: { type: Schema.Types.Mixed, default: undefined },
 	},
 	{ versionKey: false, collection: "webhookevents" },
 );

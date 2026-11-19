@@ -78,6 +78,14 @@ export const AUDIT_ACTIONS = {
 	"notifications.sent": "Sent an announcement to a segment by push and/or email.",
 	"notifications.template_saved": "Created or changed an announcement template.",
 	"notifications.template_deleted": "Deleted an announcement template.",
+	"observability.error_status_changed": "Resolved, ignored or reopened an error group.",
+	"observability.alert_rule_created": "Created an alert rule.",
+	"observability.alert_rule_updated": "Changed an alert rule (including turning it on or off).",
+	"observability.alert_rule_deleted": "Deleted an alert rule (kept, marked deleted).",
+	"observability.alert_acknowledged": "Acknowledged a firing alert.",
+	"observability.alert_resolved": "Resolved an alert by hand.",
+	"observability.webhook_replayed": "Replayed a failed Stripe webhook event (fetched again from Stripe).",
+	"observability.task_replayed": "Replayed a failed background task run.",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTIONS;

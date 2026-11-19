@@ -185,10 +185,25 @@ export const writeEntry = (entry: LogEntry) => {
 	}
 };
 
+// The error tracker (lib/observability/runtime.ts) is told about each ERROR and CRITICAL line, after it is written.
+let errorObserver: ((entry: LogEntry) => void) | null = null;
+export const observeErrorLogs = (observer: ((entry: LogEntry) => void) | null) => {
+	errorObserver = observer;
+};
+
 const at =
 	(severity: Severity) =>
-	(message: string, ...args: unknown[]) =>
-		writeEntry(buildLogEntry(severity, message, args));
+	(message: string, ...args: unknown[]) => {
+		const entry = buildLogEntry(severity, message, args);
+		writeEntry(entry);
+		if (errorObserver && (severity === "ERROR" || severity === "CRITICAL")) {
+			try {
+				errorObserver(entry);
+			} catch {
+				// Observing must never break logging.
+			}
+		}
+	};
 
 export const log = {
 	debug: at("DEBUG"),

@@ -230,7 +230,14 @@ test("sign-up decision: blocked addresses get 400 with the agreed message; allow
 	assert.deepEqual(signupDecision({ allowed: false, domain: "mailinator.com", reason: "disposable_domain" }), {
 		reject: true,
 		status: 400,
-		body: { message: "Use a permanent email address you can receive mail at." },
+		body: {
+			message: "Use a permanent email address you can receive mail at.",
+			errors: [
+				{ path: "email", msg: "Use a permanent email address you can receive mail at.", location: "body" },
+			],
+			field: "email",
+			code: "disposable_domain",
+		},
 		reason: "disposable_domain",
 	});
 
@@ -248,8 +255,12 @@ test("sign-up decision: blocked addresses get 400 with the agreed message; allow
 	const blocked = await call({ email: "new@mailinator.com" });
 	assert.equal(blocked.passed, false);
 	assert.equal(blocked.res.statusCode, 400);
-	assert.deepEqual(blocked.res.body, { message: UNDELIVERABLE_SIGNUP_MESSAGE });
-	assert.equal((await call({ email: "new@gmail.com" })).passed, true);
+	assert.equal(blocked.res.body.message, UNDELIVERABLE_SIGNUP_MESSAGE);
+	assert.equal(blocked.res.body.code, "disposable_domain");
+	assert.equal(blocked.res.body.field, "email");
+	const ok = await call({ email: "  New.Person@Gmail.com " });
+	assert.equal(ok.passed, true);
+	assert.equal(ok.res.statusCode, 200);
 	assert.equal((await call({ email: "provider@helphivenow.com" })).res.statusCode, 400, "demo address");
 });
 
@@ -278,9 +289,12 @@ test("sendEmail skips blocked recipients without calling the provider, and repor
 		status: "skipped",
 		reason: "reserved_domain",
 	});
-	assert.deepEqual(await sendEmail({ ...base, to: "jane@gmail.com" }), { status: "sent", messageId: "msg_1" });
-	assert.deepEqual(sent, ["jane@gmail.com"]);
+	assert.deepEqual(await sendEmail({ ...base, to: "jane.doe@gmail.com" }), { status: "sent", messageId: "msg_1" });
+	assert.deepEqual(sent, ["jane.doe@gmail.com"]);
 	fail = true;
-	assert.deepEqual(await sendEmail({ ...base, to: "jane@gmail.com" }), { status: "failed", error: "network down" });
+	assert.deepEqual(await sendEmail({ ...base, to: "jane.doe@gmail.com" }), {
+		status: "failed",
+		error: "network down",
+	});
 	setLogSink(quiet);
 });

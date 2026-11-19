@@ -6,6 +6,7 @@ import UserModel from "../dal/models/user.model";
 import { CLIENT_BASE_URL, VERIFICATION_EMAIL } from "../config/config";
 import { isDemoAccountEmail } from "../config/demoAccounts";
 import { addEmailToken } from "./user-controllers/utils/token.utils";
+import { findUserByEmail } from "./user-controllers/utils/accountEmail.utils";
 import { addAudienceContact, sendEmail, type EmailResult } from "../lib/email";
 import { emitEvent } from "../lib/events";
 import log from "../lib/logger";
@@ -56,7 +57,7 @@ export const sendMagicLinkEmail = async (req: Request, res: Response) => {
 		return res.status(400).json({ message: "Email is required" });
 	}
 	try {
-		const user = await UserModel.findOne({ email });
+		const user = await findUserByEmail(email);
 		if (!user) {
 			return res.status(404).json({ message: "User not found" });
 		}
@@ -109,7 +110,7 @@ export const sendResetPasswordEmail = async (req: Request, res: Response) => {
 		return res.status(201).json({ message: "Verification email sent" });
 	}
 	try {
-		const user = await UserModel.findOne({ email });
+		const user = await findUserByEmail(email);
 		if (!user) {
 			return res.status(404).json({ message: "User not found" });
 		}

@@ -17,6 +17,8 @@ import { hasRefund } from "./utils/payment.utils";
 import { createSession, endAllSessions, endSession, refreshSession, toPublicUser } from "./utils/session.utils";
 import { JWT_ALGORITHMS, isPendingEmailToken } from "./utils/token.utils";
 import { createCometChatUser, updateCometChatUser } from "./utils/cometchat.util";
+import { emailTakenBody, findSignupConflict, findUserByEmail, isDuplicateKeyError } from "./utils/accountEmail.utils";
+import { normaliseEmail } from "../../lib/emailAddress";
 import { DEMO_ACCOUNT_BLOCKED_MESSAGE, isDemoAccountEmail } from "../../config/demoAccounts";
 import { publicValidationErrors } from "../../middleware/sanitizeInput";
 import { storedFileInfo } from "../../middleware/uploads";
@@ -53,18 +55,14 @@ export const handleSignup = async (req: Request, res: Response, next: NextFuncti
 			});
 		}
 
-		const { firstName, lastName, email, password } = req.body;
+		const { firstName, lastName, password } = req.body;
+		// Stored normalised; the sign-up gate (middleware/signupEmailCheck.ts) has already checked the address.
+		const email = normaliseEmail(req.body.email);
+		req.body.email = email;
 
-		const existingUser = await UserModel.findOne({ email });
-		if (existingUser && existingUser.roles.Provider) {
-			return res.status(409).json({
-				message: "A provider account already exists on this email. Please use a different one.",
-			});
-		} else if (existingUser && existingUser.roles.User) {
-			return res.status(409).json({
-				message: "An account already exists on this email. Please use a different one.",
-			});
-		}
+		// One account per mailbox: the same address in any case, or the same canonical mailbox (+tag, Gmail dots).
+		const existingUser = await findSignupConflict(email);
+		if (existingUser) return res.status(409).json(emailTakenBody(existingUser));
 
 		const newUser = new UserModel({
 			firstName,
@@ -76,7 +74,14 @@ export const handleSignup = async (req: Request, res: Response, next: NextFuncti
 				Provider: false,
 			},
 		});
-		await newUser.save();
+		try {
+			await newUser.save();
+		} catch (error) {
+			// Two sign-ups for the same mailbox at once: the unique indexes let one through; the other is "taken".
+			if (isDuplicateKeyError(error))
+				return res.status(409).json(emailTakenBody(await findSignupConflict(email)));
+			throw error;
+		}
 		emitEvent(
 			{
 				type: "user.signed_up",
@@ -106,18 +111,14 @@ export const handleSignupProvider = async (req: Request, res: Response, next: Ne
 			});
 		}
 
-		const { firstName, lastName, email, password } = req.body;
+		const { firstName, lastName, password } = req.body;
+		// Stored normalised; the sign-up gate (middleware/signupEmailCheck.ts) has already checked the address.
+		const email = normaliseEmail(req.body.email);
+		req.body.email = email;
 
-		const existingUser = await UserModel.findOne({ email });
-		if (existingUser && existingUser.roles.Provider) {
-			return res.status(409).json({
-				message: "A provider account already exists on this email. Please use a different one.",
-			});
-		} else if (existingUser && existingUser.roles.User) {
-			return res.status(409).json({
-				message: "An account already exists on this email. Please use a different one.",
-			});
-		}
+		// One account per mailbox: the same address in any case, or the same canonical mailbox (+tag, Gmail dots).
+		const existingUser = await findSignupConflict(email);
+		if (existingUser) return res.status(409).json(emailTakenBody(existingUser));
 
 		const newUser = new UserModel({
 			firstName,
@@ -129,7 +130,14 @@ export const handleSignupProvider = async (req: Request, res: Response, next: Ne
 				Provider: true,
 			},
 		});
-		await newUser.save();
+		try {
+			await newUser.save();
+		} catch (error) {
+			// Two sign-ups for the same mailbox at once: the unique indexes let one through; the other is "taken".
+			if (isDuplicateKeyError(error))
+				return res.status(409).json(emailTakenBody(await findSignupConflict(email)));
+			throw error;
+		}
 		emitEvent(
 			{
 				type: "user.signed_up",
@@ -162,7 +170,7 @@ export const handleLogin = async (req: Request, res: Response) => {
 		const { email, password } = req.body;
 
 		// The same answer, after the same bcrypt work, whether or not the account exists.
-		const user = await UserModel.findOne({ email });
+		const user = await findUserByEmail(email);
 		const passwordMatch = await bcrypt.compare(password, user?.password ?? DUMMY_PASSWORD_HASH);
 		const role = user?.roles?.Provider ? "provider" : "customer";
 		if (user && passwordMatch) {

@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import UserModel from "../../../dal/models/user.model";
 import { isSessionActive } from "./session.utils";
 import { isSuspended } from "../../../lib/suspension";
+import { findUserByEmail } from "./accountEmail.utils";
 
 export const JWT_ALGORITHMS: jwt.Algorithm[] = ["HS256"];
 
@@ -31,10 +32,11 @@ export const verifyAccessToken = async (token: unknown): Promise<AccessTokenResu
 	if (typeof email !== "string" || typeof sessionId !== "string" || !email || !sessionId) {
 		return { ok: false, reason: "invalid" };
 	}
-	const user = await UserModel.findOne({ email }).exec();
+	// Any letter case, so a token issued before the stored email was lower-cased still works.
+	const user = await findUserByEmail(email);
 	// A suspended account is refused even if a session survived (a sign-in racing the suspension re-saving sessions).
 	if (!user || isSuspended(user) || !isSessionActive(user, sessionId)) return { ok: false, reason: "inactive" };
-	return { ok: true, user, email, sessionId };
+	return { ok: true, user, email: user.email, sessionId };
 };
 
 /** Email links store only a hash of their token, so a database reader cannot use a pending link. */

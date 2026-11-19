@@ -27,6 +27,8 @@ import { appFlavorFromHeaders } from "../../lib/appIdentity";
 import { releasePolicy } from "../../lib/platformSettings";
 import { PAYOUT_HELD, blocksPayout, payoutReservationFilter, recordBlocked } from "../../lib/risk/holds";
 import log from "../../lib/logger";
+import { canonicalEmail } from "../../lib/emailAddress";
+import { checkNewAccountEmail } from "../../middleware/signupEmailCheck";
 
 const APPLICATION_FIELDS = ["firstName", "lastName", "email", "phone", "country", "state", "city", "street"] as const;
 const JOB_TYPE_KEYS = ["publicAreaAttendant", "roomAttendant", "linenPorter"] as const;
@@ -84,6 +86,14 @@ export const handleRequestProviderAccount = async (req: Request, res: Response) 
 			return res.status(400).json({
 				message: "You already have a pending or approved provider account request.",
 			});
+		}
+
+		// A contact email other than the account's own gets the sign-up checks (the app pre-fills the account's
+		// address, which is left alone so an older account can still apply).
+		if (canonicalEmail(req.body.email) !== canonicalEmail(user.email)) {
+			const emailCheck = await checkNewAccountEmail(req.body.email);
+			if (!emailCheck.ok) return res.status(400).json(emailCheck.body);
+			req.body.email = emailCheck.email;
 		}
 
 		const requestId = uuidv4();

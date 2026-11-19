@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 import mongoose, { Schema, Document, Model } from "mongoose";
+import { canonicalEmail } from "../../lib/emailAddress";
 
 export interface UserSession {
 	sessionId: string;
@@ -35,6 +36,8 @@ interface IUser extends Document {
 	firstName: string;
 	lastName: string;
 	email: string;
+	/** The mailbox identity (lib/emailAddress.ts canonicalEmail), unique; absent on accounts not yet backfilled. */
+	emailCanonical?: string;
 	isEmailVerified: boolean;
 	emailVerificationTokens: string[];
 	password: string;
@@ -90,6 +93,8 @@ export const USER_SECRET_FIELDS = [
 	"sessions",
 	"resetPasswordTokens",
 	"emailVerificationTokens",
+	// Internal duplicate-guard key; responses keep their shape and the demo-admin masking never sees it.
+	"emailCanonical",
 ] as const;
 
 // Admin-only fields: the person never sees who suspended them or the admin's reason.
@@ -125,6 +130,7 @@ const userSchema = new Schema<IUser>(
 		firstName: { type: String, required: true, minlength: 1, maxlength: 50 },
 		lastName: { type: String, required: true, minlength: 1, maxlength: 50 },
 		email: { type: String, required: true, unique: true, match: /.+\@.+\..+/ },
+		emailCanonical: { type: String },
 		isEmailVerified: { type: Boolean, default: false },
 		emailVerificationTokens: { type: [String], default: [] },
 		password: { type: String, required: true, minlength: 8 },
@@ -233,10 +239,18 @@ userSchema.index({ email: 1 }, { name: "email_ci", collation: { locale: "en", st
 userSchema.index({ firstName: 1 }, { name: "firstName_ci", collation: { locale: "en", strength: 2 } });
 userSchema.index({ lastName: 1 }, { name: "lastName_ci", collation: { locale: "en", strength: 2 } });
 userSchema.index({ phone: 1 });
+// Duplicate guard: one account per mailbox (Name@gmail.com, name@gmail.com and n.ame+x@googlemail.com are one).
+// Partial, so accounts without the field (until scripts/backfill-email-canonical.ts runs) are not in it.
+userSchema.index(
+	{ emailCanonical: 1 },
+	{ name: "emailCanonical_unique", unique: true, partialFilterExpression: { emailCanonical: { $type: "string" } } },
+);
 
 // Middleware to hash password before saving
 userSchema.pre("save", async function (next) {
 	const user = this as IUser;
+	// Only on create or an email change, so saving an old account never trips the unique index.
+	if (user.isNew || user.isModified("email")) user.emailCanonical = canonicalEmail(user.email);
 	if (user.isModified("password")) {
 		const salt = await bcrypt.genSalt(10);
 		user.password = await bcrypt.hash(user.password, salt);

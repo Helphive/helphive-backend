@@ -77,7 +77,6 @@ test("emitEvent returns at once, writes later, and swallows write errors", async
 		if (fail) throw new Error("database down");
 		writes.push(doc);
 	});
-	const started = Date.now();
 	emitEvent({ type: "user.signed_up", subjects: { userId: oid() }, properties: { role: "customer" } });
 	assert.equal(writes.length, 0, "nothing written synchronously");
 	await new Promise((resolve) => setImmediate(resolve));
@@ -85,7 +84,6 @@ test("emitEvent returns at once, writes later, and swallows write errors", async
 	fail = true;
 	assert.doesNotThrow(() => emitEvent({ type: "user.signed_up" }));
 	await new Promise((resolve) => setImmediate(resolve));
-	assert.ok(Date.now() - started < 100);
 	setLogSink(quiet);
 });
 

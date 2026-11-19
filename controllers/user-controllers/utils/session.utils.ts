@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import UserModel from "../../../dal/models/user.model";
 import { getRequestContext, type RequestContext } from "../../../lib/requestContext";
 import { isSuspended } from "../../../lib/suspension";
+import { findUserByEmail } from "./accountEmail.utils";
 import { revokeAllChatTokens, revokeChatToken } from "../../../lib/chat/chatTokens";
 import { aliasesToForget } from "../../../lib/push";
 import { forgetPushAliases } from "../../service-accounts/onesignal";
@@ -93,7 +94,7 @@ export const refreshSession = async (presentedToken: string): Promise<RefreshRes
 	if (typeof email !== "string" || typeof sessionId !== "string" || !email || !sessionId)
 		return { ok: false, status: 403, message: "Refresh token is malformed." };
 
-	const user = await UserModel.findOne({ email }).exec();
+	const user = await findUserByEmail(email);
 	if (!user) return { ok: false, status: 403, message: "User not found." };
 	// Suspension ends every session; this also covers a session re-saved by a sign-in that raced the suspension.
 	if (isSuspended(user)) return { ok: false, status: 403, message: "Session has ended. Please sign in again." };

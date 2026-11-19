@@ -9,7 +9,7 @@ import { createGoogleCloudTaskPaymentTrigger, sendBookingCancelledNotification }
 import { sendBookingCompletedNotification } from "./auth.utils";
 import { emitEvent } from "../../../lib/events";
 import type { ActorType } from "../../../lib/requestContext";
-import { PROVIDER_SHARE } from "../../../lib/operations";
+import { earningReleaseAt, getSettings, providerShareFor } from "../../../lib/settings";
 
 type Id = mongoose.Types.ObjectId | string;
 type BookingDoc = InstanceType<typeof BookingModel>;
@@ -97,13 +97,17 @@ export const completeBookingTransition = async (input: CompleteInput): Promise<C
 	let earning: InstanceType<typeof EarningModel> | null = null;
 	let releaseAt: Date;
 	try {
+		// Platform settings (lib/settings.ts); the defaults are the previous 5 % fee and 30-second release.
+		const settings = await getSettings();
+		const feePercent = settings["payments.platformFeePercent"];
 		earning = await EarningModel.create({
 			bookingId: booking._id,
-			amount: input.paymentAmount * PROVIDER_SHARE,
+			amount: input.paymentAmount * providerShareFor(feePercent),
 			date: new Date(),
+			feePercent,
 		});
-		// REQUIRES ATTENTION: earnings are released 30 seconds after completion (meant to be several days).
-		releaseAt = new Date(Date.now() + 30 * 1000);
+		// REQUIRES ATTENTION: earnings are released 30 seconds after completion by default (meant to be several days).
+		releaseAt = earningReleaseAt(Date.now(), settings["payments.earningsReleaseDelaySeconds"]);
 		await createGoogleCloudTaskPaymentTrigger(String(booking._id), releaseAt);
 	} catch (error) {
 		// Without its release task the earning would never be paid; put the booking back so it can be retried.

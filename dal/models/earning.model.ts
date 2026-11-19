@@ -7,6 +7,8 @@ export interface IEarning extends Document {
 	status: "pending" | "completed" | "cancelled";
 	completionDate?: Date;
 	transferId?: string;
+	/** The platform fee percentage in force when the earning was created (absent before settings: 5). */
+	feePercent?: number;
 }
 
 const earningSchema = new Schema<IEarning>(
@@ -17,6 +19,7 @@ const earningSchema = new Schema<IEarning>(
 		status: { type: String, enum: ["pending", "completed", "cancelled"], default: "pending" },
 		completionDate: { type: Date, default: null },
 		transferId: { type: String, default: null },
+		feePercent: { type: Number },
 	},
 	{
 		timestamps: true,

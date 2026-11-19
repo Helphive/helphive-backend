@@ -25,6 +25,7 @@ import authRoute from "./routes/user-routes/auth.route";
 import adminRoute from "./routes/admin.route";
 import emailRoute from "./routes/email.route";
 import webhookRoute from "./routes/webhook-routes/webhook.route";
+import publicRoute from "./routes/public.route";
 import { createProviderAvailabilityUpgradeHandler } from "./controllers/user-controllers/provider-websocket";
 
 if (
@@ -134,6 +135,7 @@ app.get("/", (req: Request, res: Response) => {
 app.use("/auth", authRoute);
 app.use("/admin", adminRoute);
 app.use("/email", emailRoute);
+app.use("/public", publicRoute);
 
 app.get("/stripe-onboarding", (req: Request, res: Response) => {
 	// Back into the app after Stripe onboarding. Only the one known flag is passed on.

@@ -14,6 +14,7 @@ import { emitEvent } from "../../lib/events";
 import log from "../../lib/logger";
 import { refundTotals } from "../../lib/operations";
 import { beginStripeDelivery, trackWebhookWork, type WebhookDelivery } from "../../lib/webhookRecorder";
+import { recordDisputeEvent } from "./disputes.webhook";
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 const connectedEndpointSecret = process.env.STRIPE_CONNECTED_WEBHOOK_SECRET || "";
@@ -86,6 +87,14 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
 			}
 			case "refund.failed":
 				trackWebhookWork(delivery, updateRefundStatus(event.data.object, "failed"));
+				break;
+			// Card disputes (controllers/webhook-controllers/disputes.webhook.ts).
+			case "charge.dispute.created":
+			case "charge.dispute.updated":
+			case "charge.dispute.funds_withdrawn":
+			case "charge.dispute.funds_reinstated":
+			case "charge.dispute.closed":
+				trackWebhookWork(delivery, recordDisputeEvent(event));
 				break;
 
 			default:

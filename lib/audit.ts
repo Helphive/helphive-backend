@@ -47,6 +47,18 @@ export const AUDIT_ACTIONS = {
 	"bookings.resolved_completed": "Marked a stuck in-progress booking completed (the provider's earning is created).",
 	"bookings.resolved_cancelled": "Cancelled a stuck in-progress booking (full refund or none, as chosen).",
 	"payments.refunded": "Refunded a payment in full or in part through Stripe.",
+	"finance.reconciliation_run": "Ran a reconciliation with Stripe over a date range (reads Stripe only).",
+	"finance.mismatch_explained": "Marked a reconciliation mismatch explained, with a note.",
+	"settings.updated": "Changed a platform setting (before and after values in the summary).",
+	"support.case_opened": "Opened a support case.",
+	"support.case_updated": "Changed a support case's status, priority, category or assignee.",
+	"support.case_note_added": "Added an internal note to a support case.",
+	"support.case_message_sent": "Emailed the customer or provider from a support case (subject to the email policy).",
+	"support.case_action_linked": "Linked a refund or another action to a support case.",
+	"support.case_resolved": "Resolved a support case.",
+	"notifications.sent": "Sent an announcement to a segment by push and/or email.",
+	"notifications.template_saved": "Created or changed an announcement template.",
+	"notifications.template_deleted": "Deleted an announcement template.",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTIONS;

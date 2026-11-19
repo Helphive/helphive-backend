@@ -67,3 +67,20 @@ export class MongoRateLimitStore implements Store {
 		await RateLimitModel.collection.deleteOne({ _id: this.id(key) as any });
 	}
 }
+
+/**
+ * Remembers that a sign-in succeeded for an (account, address) pair, in the same collection: the TTL index removes the
+ * record when `expireAt` passes, so each success extends the exemption to `ttlMs` from now.
+ */
+export const rememberKnownAddress = async (key: string, ttlMs: number) => {
+	const expireAt = new Date(Date.now() + ttlMs);
+	await RateLimitModel.collection.updateOne(
+		{ _id: key as any },
+		{ $set: { count: 0, resetAt: expireAt, expireAt } },
+		{ upsert: true },
+	);
+};
+
+/** Whether the pair signed in within its TTL. Ignores records the TTL monitor has not deleted yet. */
+export const isKnownAddress = async (key: string) =>
+	!!(await RateLimitModel.collection.findOne({ _id: key as any, expireAt: { $gt: new Date() } }));

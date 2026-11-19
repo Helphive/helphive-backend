@@ -12,6 +12,7 @@ import { sendNotification, storeNotification } from "./service-accounts/onesigna
 import path from "path";
 import { isActiveAdmin, signAdminToken } from "../middleware/verifyAdminJWT";
 import { publicValidationErrors } from "../middleware/sanitizeInput";
+import { recordSuccessfulSignIn } from "../middleware/rateLimit";
 
 const ADMIN_BCRYPT_ROUNDS = 12;
 const DUMMY_ADMIN_HASH = bcrypt.hashSync("helphive-dummy-admin-password", ADMIN_BCRYPT_ROUNDS);
@@ -79,6 +80,8 @@ export const handleLogin = async (req: Request, res: Response) => {
 		}
 
 		// Response shape unchanged for the admin app: { admin, accessToken } (the password hash is never serialised).
+		// This address may now sign in to this account even while the per-account failure cap is exceeded.
+		recordSuccessfulSignIn("admin", req);
 		res.json({ admin, accessToken: signAdminToken(admin) });
 	} catch (error) {
 		console.error("Error logging in:", error);

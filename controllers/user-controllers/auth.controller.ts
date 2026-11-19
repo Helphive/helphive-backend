@@ -24,6 +24,7 @@ import { createCometChatUser, updateCometChatUser } from "./utils/cometchat.util
 import { DEMO_ACCOUNT_BLOCKED_MESSAGE, isDemoAccountEmail } from "../../config/demoAccounts";
 import { publicValidationErrors } from "../../middleware/sanitizeInput";
 import { storedFileInfo } from "../../middleware/uploads";
+import { recordSuccessfulSignIn } from "../../middleware/rateLimit";
 
 const emailVerificationSecret = process.env.EMAIL_VERIFICATION_SECRET || "";
 const ONE_SIGNAL_APP_ID = process.env.ONE_SIGNAL_APP_ID || "";
@@ -152,6 +153,8 @@ export const handleLogin = async (req: Request, res: Response) => {
 
 			// Each login is its own session, so signing in on another device no longer signs this one out.
 			const { accessToken, refreshToken: newRefreshToken } = await createSession(user);
+			// This address may now sign in to this account even while the per-account failure cap is exceeded.
+			recordSuccessfulSignIn("user", req);
 
 			await handleOneSignalSetup(user);
 

@@ -1,5 +1,6 @@
 // Pure helpers for rate limiting: client IP resolution, key selection, the limits table and a small fixed-window
 // counter for the websocket. No Express or database imports, so they can be unit tested directly.
+import crypto from "crypto";
 import { ipKeyGenerator } from "express-rate-limit";
 
 const SECOND = 1000;
@@ -16,11 +17,14 @@ export const RATE_LIMITS = {
 	// All API traffic except webhooks. Signed-in clients are keyed by account, anonymous ones by IP.
 	globalUser: { windowMs: 5 * MINUTE, limit: 600 },
 	globalAnonymous: { windowMs: 5 * MINUTE, limit: 300 },
-	// Sign-in: failed attempts only, so many staff signing in behind one hotel or carrier IP are never blocked.
+	// Sign-in: three layers, failed attempts only (see the comment at the top of middleware/rateLimit.ts).
+	// 1. Per client address. Successes never count, so staff behind one hotel or carrier IP are not blocked.
 	loginFailuresPerIp: { windowMs: 15 * MINUTE, limit: 30 },
+	// 2. Per account and address: one source cannot hammer one account.
 	loginFailuresPerAccountAndIp: { windowMs: 15 * MINUTE, limit: 5 },
-	// Guessing one account from many IPs: at most 30 wrong passwords an hour, whatever the source.
-	loginFailuresPerAccount: { windowMs: HOUR, limit: 30 },
+	// 3. Per account across all addresses: stops guessing spread over many addresses. Twice the most one address can
+	// send in an hour (see maxFailuresFromOneAddress); once reached, only addresses unknown to the account are refused.
+	loginFailuresPerAccount: { windowMs: HOUR, limit: 300 },
 	signupPerIp: { windowMs: HOUR, limit: 30 },
 	emailRequestPerIp: { windowMs: HOUR, limit: 20 },
 	emailRequestPerAddress: { windowMs: HOUR, limit: 5 },
@@ -35,7 +39,8 @@ export const RATE_LIMITS = {
 	bookingActionPerUser: { windowMs: 15 * MINUTE, limit: 60 },
 	uploadPerUser: { windowMs: HOUR, limit: 10 },
 	adminLoginFailuresPerIp: { windowMs: 15 * MINUTE, limit: 10 },
-	adminLoginFailuresPerAccount: { windowMs: 15 * MINUTE, limit: 5 },
+	adminLoginFailuresPerAccountAndIp: { windowMs: 15 * MINUTE, limit: 5 },
+	adminLoginFailuresPerAccount: { windowMs: HOUR, limit: 100 },
 	// Webhooks and tasks: only rejected (unsigned or unauthorised) calls count, so Stripe and Cloud Tasks never are.
 	webhookFailuresPerIp: { windowMs: 15 * MINUTE, limit: 30 },
 	wsConnectionsPerIp: { windowMs: MINUTE, limit: 30 },
@@ -144,3 +149,48 @@ export class FixedWindowCounter {
 		for (const [key, window] of this.windows) if (window.resetAt <= now) this.windows.delete(key);
 	}
 }
+
+/** How long a successful sign-in makes its (account, address) pair exempt from the per-account cap. */
+export const KNOWN_ADDRESS_TTL_MS = 30 * 24 * HOUR;
+
+/**
+ * The most failed sign-ins one client address can ever add to an account's counter within one cap window, from the
+ * per-address limit alone. Windows are fixed and not aligned with each other, so a cap window can overlap one more
+ * per-address window than fits in it (an hour touches up to five 15-minute windows).
+ */
+export const maxFailuresFromOneAddress = (perAddress: LimitRule, capWindowMs: number) =>
+	perAddress.limit * (Math.ceil(capWindowMs / perAddress.windowMs) + 1);
+
+export type SignInScope = "user" | "admin";
+
+/**
+ * Keyed hash, so these database keys hold neither emails nor client addresses. The secret only has to be stable: if it
+ * changes, remembered addresses are forgotten and owners count as new addresses until they next sign in.
+ */
+const keyedHash = (secret: string, ...parts: string[]) =>
+	crypto
+		.createHmac("sha256", secret || "helphive-rate-limit")
+		.update(parts.join("\n"))
+		.digest("hex");
+
+/** Per-account cap key, or null when the body has no usable email (validation then rejects the request). */
+export const accountCapKey = (scope: SignInScope, email: unknown, secret: string) => {
+	const normalized = normalizeEmail(email);
+	return normalized ? `account:${keyedHash(secret, scope, normalized)}` : null;
+};
+
+/** Key of the record "this address signed in to this account". Addresses grouped as in the limits (IPv6 /56). */
+export const knownAddressKey = (scope: SignInScope, email: unknown, ip: string | undefined, secret: string) => {
+	const normalized = normalizeEmail(email);
+	return normalized ? `known:${keyedHash(secret, scope, normalized, ipKey(ip))}` : null;
+};
+
+export type KnownAddressLookup = "known" | "unknown" | "error";
+
+/**
+ * What happens to a sign-in attempt once its account is over the cap: an address that signed in to the account in the
+ * last 30 days goes through; a new one gets 429. A failed lookup (MongoDB unreachable) lets it through, as every other
+ * shared limiter fails open.
+ */
+export const accountCapDecision = (lookup: KnownAddressLookup): "allow" | "block" =>
+	lookup === "unknown" ? "block" : "allow";

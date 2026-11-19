@@ -4,8 +4,13 @@ import assert from "node:assert/strict";
 import jwt from "jsonwebtoken";
 import {
 	FixedWindowCounter,
+	KNOWN_ADDRESS_TTL_MS,
 	RATE_LIMITS,
 	accountAndIpKey,
+	accountCapDecision,
+	accountCapKey,
+	knownAddressKey,
+	maxFailuresFromOneAddress,
 	clientIpFrom,
 	ipKey,
 	normalizeEmail,
@@ -16,8 +21,9 @@ import {
 
 process.env.ACCESS_TOKEN_SECRET = "test-access-secret";
 // Imported after the secret is set; the limiters read it per request.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { createLimiter, globalLimiter } = require("../middleware/rateLimit") as typeof import("../middleware/rateLimit");
+const { createLimiter, globalLimiter, lookupKnownAddress } =
+	// eslint-disable-next-line @typescript-eslint/no-require-imports
+	require("../middleware/rateLimit") as typeof import("../middleware/rateLimit");
 
 test("client IP: one trusted hop takes the address the Google front end appended", () => {
 	// A client that forges X-Forwarded-For only adds entries to the left of the real address.
@@ -82,9 +88,6 @@ test("limits leave normal client use far below the threshold", () => {
 	assert.ok(RATE_LIMITS.refreshPerSession.limit >= 10);
 	// The app sends one availability message per location change (at most every 10 s).
 	assert.ok(RATE_LIMITS.wsMessagesPerSocket.limit >= 6 * 3);
-	// Only failures count at sign-in, so a shared NAT with many successful logins is never limited.
-	assert.ok(RATE_LIMITS.loginFailuresPerAccount.limit <= 30);
-	assert.ok(RATE_LIMITS.loginFailuresPerAccountAndIp.limit <= RATE_LIMITS.loginFailuresPerAccount.limit);
 });
 
 // Minimal request/response doubles for driving an express-rate-limit middleware without a server.
@@ -110,6 +113,7 @@ const fakeResponse = () => {
 		body: undefined as unknown,
 		setHeader: (name: string, value: string) => (headers[name.toLowerCase()] = String(value)),
 		getHeader: (name: string) => headers[name.toLowerCase()],
+		removeHeader: (name: string) => delete headers[name.toLowerCase()],
 		append: (name: string, value: string) => (headers[name.toLowerCase()] = String(value)),
 		status(code: number) {
 			res.statusCode = code;
@@ -178,4 +182,140 @@ test("global limiter keys by a valid bearer token's account, and skips webhooks"
 	const webhook = await run(globalLimiter, fakeRequest({ path: "/webhook/stripe" }));
 	assert.equal(webhook.passed, true);
 	assert.equal(webhook.res.headers["ratelimit-policy"], undefined);
+});
+
+const HOUR = 60 * 60 * 1000;
+
+const signInLayers = [
+	{
+		scope: "user",
+		perAddress: RATE_LIMITS.loginFailuresPerIp,
+		perAccountAndAddress: RATE_LIMITS.loginFailuresPerAccountAndIp,
+		cap: RATE_LIMITS.loginFailuresPerAccount,
+	},
+	{
+		scope: "admin",
+		perAddress: RATE_LIMITS.adminLoginFailuresPerIp,
+		perAccountAndAddress: RATE_LIMITS.adminLoginFailuresPerAccountAndIp,
+		cap: RATE_LIMITS.adminLoginFailuresPerAccount,
+	},
+] as const;
+
+test("sign-in numbers: users 30/15 min per address, 5/15 min per account+address, 300/hour per account", () => {
+	assert.deepEqual(RATE_LIMITS.loginFailuresPerIp, { windowMs: 15 * 60 * 1000, limit: 30 });
+	assert.deepEqual(RATE_LIMITS.loginFailuresPerAccountAndIp, { windowMs: 15 * 60 * 1000, limit: 5 });
+	assert.deepEqual(RATE_LIMITS.loginFailuresPerAccount, { windowMs: HOUR, limit: 300 });
+	assert.deepEqual(RATE_LIMITS.adminLoginFailuresPerIp, { windowMs: 15 * 60 * 1000, limit: 10 });
+	assert.deepEqual(RATE_LIMITS.adminLoginFailuresPerAccountAndIp, { windowMs: 15 * 60 * 1000, limit: 5 });
+	assert.deepEqual(RATE_LIMITS.adminLoginFailuresPerAccount, { windowMs: HOUR, limit: 100 });
+	assert.equal(KNOWN_ADDRESS_TTL_MS, 30 * 24 * HOUR);
+});
+
+for (const { scope, perAddress, perAccountAndAddress, cap } of signInLayers) {
+	test(`${scope}: one address at its own limit can never trip the account cap (with 2x margin)`, () => {
+		// Unaligned fixed windows: one hour can touch five 15-minute windows, so 150 (users) or 50 (admins), not 120/40.
+		const fromOneAddress = maxFailuresFromOneAddress(perAddress, cap.windowMs);
+		assert.equal(fromOneAddress, perAddress.limit * 5);
+		assert.ok(cap.limit >= 2 * fromOneAddress, `cap ${cap.limit} vs ${fromOneAddress} from one address`);
+		// The per-account-and-address layer is stricter still for a single account.
+		assert.ok(maxFailuresFromOneAddress(perAccountAndAddress, cap.windowMs) < fromOneAddress);
+	});
+
+	test(`${scope}: simulated worst case - one address failing every second for 6 hours never reaches the cap`, () => {
+		for (const offsetMs of [0, 1, 7 * 60 * 1000, 14 * 60 * 1000 + 59_999]) {
+			let now = 1_000_000 + offsetMs;
+			const clock = () => now;
+			const addressLayer = new FixedWindowCounter(perAddress, clock);
+			const capLayer = new FixedWindowCounter(cap, clock);
+			// The cap window starts later than the address window, the unaligned case.
+			now += offsetMs;
+			let maxCount = 0;
+			for (let second = 0; second < 6 * 3600; second++, now += 1000) {
+				// Limiters run in order; an attempt refused by the address layer never reaches the cap.
+				if (!addressLayer.hit("address").allowed) continue;
+				const counted = capLayer.hit("account");
+				maxCount = Math.max(maxCount, counted.count);
+				assert.ok(counted.allowed, `cap tripped at second ${second}`);
+			}
+			assert.ok(maxCount <= maxFailuresFromOneAddress(perAddress, cap.windowMs));
+		}
+	});
+}
+
+test("account cap keys are hashed, case-insensitive, scoped, and null without an email", () => {
+	const key = accountCapKey("user", "Owner@Example.com", "s1");
+	assert.match(key ?? "", /^account:[a-f\d]{64}$/);
+	assert.equal(key?.includes("owner"), false, "no email in the key");
+	assert.equal(accountCapKey("user", " owner@example.com ", "s1"), key);
+	assert.notEqual(accountCapKey("admin", "owner@example.com", "s1"), key, "users and admins are counted apart");
+	assert.notEqual(accountCapKey("user", "owner@example.com", "s2"), key, "keyed by the server secret");
+	assert.equal(accountCapKey("user", { $ne: null }, "s1"), null);
+	assert.equal(accountCapKey("user", "", "s1"), null);
+});
+
+test("known-address keys are per account and per address, hashed, with IPv6 grouped by /56", () => {
+	const key = knownAddressKey("user", "owner@example.com", "203.0.113.7", "s1");
+	assert.match(key ?? "", /^known:[a-f\d]{64}$/);
+	assert.equal(key?.includes("203.0.113.7"), false, "no address in the key");
+	assert.equal(knownAddressKey("user", "OWNER@example.com", "203.0.113.7", "s1"), key);
+	assert.notEqual(knownAddressKey("user", "owner@example.com", "203.0.113.8", "s1"), key);
+	assert.notEqual(knownAddressKey("user", "other@example.com", "203.0.113.7", "s1"), key);
+	assert.notEqual(knownAddressKey("admin", "owner@example.com", "203.0.113.7", "s1"), key);
+	assert.equal(
+		knownAddressKey("user", "owner@example.com", "2001:db8:abcd:12ff::1", "s1"),
+		knownAddressKey("user", "owner@example.com", "2001:db8:abcd:1200::9", "s1"),
+	);
+	assert.equal(knownAddressKey("user", ["owner@example.com"], "203.0.113.7", "s1"), null);
+});
+
+test("over the cap: known addresses pass, unknown ones are refused, a failed lookup fails open", async () => {
+	assert.equal(accountCapDecision("known"), "allow");
+	assert.equal(accountCapDecision("unknown"), "block");
+	assert.equal(accountCapDecision("error"), "allow");
+	// No usable email means no record can exist (validation rejects such a request anyway); no database call.
+	assert.equal(await lookupKnownAddress(null), "unknown");
+});
+
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test("a limiter with an over-limit hook lets allowed requests through without Retry-After", async () => {
+	const decisions: ("allow" | "block" | "throw")[] = [];
+	const limiter = createLimiter({
+		name: "test-cap",
+		rule: { windowMs: 60_000, limit: 1 },
+		kind: "local",
+		key: () => "account:x",
+		onLimitReached: async (_req, res, next, reject) => {
+			const decision = decisions.shift();
+			if (decision === "throw") throw new Error("lookup failed");
+			if (decision === "block") return reject();
+			res.removeHeader("Retry-After");
+			next();
+		},
+	});
+	const first = await run(limiter, fakeRequest());
+	assert.equal(first.passed, true, "under the limit the hook is not consulted");
+
+	const attempt = async (decision: "allow" | "block" | "throw") => {
+		decisions.push(decision);
+		const res = fakeResponse();
+		let passed = false;
+		await limiter(fakeRequest(), res, () => (passed = true));
+		await settle();
+		return { res, passed };
+	};
+
+	const known = await attempt("allow");
+	assert.equal(known.passed, true);
+	assert.equal(known.res.headers["retry-after"], undefined);
+
+	const unknown = await attempt("block");
+	assert.equal(unknown.passed, false);
+	assert.equal(unknown.res.statusCode, 429);
+	assert.ok(Number(unknown.res.headers["retry-after"]) > 0);
+	assert.deepEqual(unknown.res.body, { message: "Too many requests. Please try again later." });
+
+	const broken = await attempt("throw");
+	assert.equal(broken.passed, true, "an error in the hook fails open");
+	assert.equal(broken.res.headers["retry-after"], undefined);
 });

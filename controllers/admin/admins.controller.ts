@@ -181,7 +181,8 @@ export const handleCreateAdmin = async (req: Request, res: Response) => {
 };
 
 const notSelf = (req: Request, res: Response) => {
-	if (req.params.id === String((req.admin as Admin)._id)) {
+	// Ids are hexadecimal and MongoDB matches them in either case, so compare without regard to case.
+	if (String(req.params.id).toLowerCase() === String((req.admin as Admin)._id).toLowerCase()) {
 		res.status(400).json({ message: "Ask another admin to make this change to your own account." });
 		return false;
 	}

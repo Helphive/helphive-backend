@@ -4,6 +4,7 @@ import { rateLimit, type Options } from "express-rate-limit";
 import { MongoRateLimitStore, isKnownAddress, rememberKnownAddress } from "./mongoRateLimitStore";
 import { EventSampler, emitEvent } from "../lib/events";
 import { isDemoAdminEmail } from "../config/demoAccounts";
+import { ADMIN_MFA_AUDIENCE, adminTokenSecret } from "../config/adminAuth";
 import log from "../lib/logger";
 import {
 	KNOWN_ADDRESS_TTL_MS,
@@ -343,9 +344,21 @@ const signedInAdminId = (req: Request): string | null => {
 	const admin = (req as Request & { admin?: { _id: unknown } }).admin;
 	return admin ? String(admin._id) : null;
 };
+// A challenge token only names an admin once its signature, audience and expiry check out. A forged or expired
+// token must not be able to spend another admin's attempts, so it gets no per-admin key (the per-address limiter
+// still counts it).
+const verifiedChallengeKey = (challengeToken: unknown): string | null => {
+	if (typeof challengeToken !== "string") return null;
+	try {
+		jwt.verify(challengeToken, adminTokenSecret(), { audience: ADMIN_MFA_AUDIENCE, algorithms: ["HS256"] });
+	} catch {
+		return null;
+	}
+	return mfaChallengeKey(challengeToken);
+};
 const mfaAdminKey = (req: Request) => {
 	const adminId = signedInAdminId(req);
-	return adminId ? `mfa-admin:${adminId}` : mfaChallengeKey(req.body?.challengeToken);
+	return adminId ? `mfa-admin:${adminId}` : verifiedChallengeKey(req.body?.challengeToken);
 };
 
 export const adminMfaLimiters = [

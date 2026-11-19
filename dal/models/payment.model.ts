@@ -88,6 +88,8 @@ PaymentSchema.index({ paymentIntentId: 1 });
 PaymentSchema.index({ refundId: 1 }, { partialFilterExpression: { refundId: { $type: "string" } } });
 PaymentSchema.index({ status: 1, createdAt: -1 });
 PaymentSchema.index({ createdAt: -1 });
+// Analytics: paid bookings and value by paid date.
+PaymentSchema.index({ status: 1, paidAt: -1 });
 // Webhook lookups for earlier partial refunds, and the refunds-pending/failed counts on the operations overview.
 PaymentSchema.index({ "refunds.refundId": 1 });
 PaymentSchema.index(

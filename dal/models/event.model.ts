@@ -78,6 +78,8 @@ eventSchema.index(
 	{ "context.deviceId": 1, at: -1 },
 	{ partialFilterExpression: { "context.deviceId": { $exists: true } } },
 );
+// Analytics: active customers and providers by time.
+eventSchema.index({ "actor.type": 1, at: -1 });
 eventSchema.index({ key: 1 }, { unique: true, partialFilterExpression: { key: { $exists: true } } });
 
 const EventModel = mongoose.model<EventDoc>("Event", eventSchema);

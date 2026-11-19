@@ -47,6 +47,9 @@ export const AUDIT_ACTIONS = {
 	"bookings.resolved_completed": "Marked a stuck in-progress booking completed (the provider's earning is created).",
 	"bookings.resolved_cancelled": "Cancelled a stuck in-progress booking (full refund or none, as chosen).",
 	"payments.refunded": "Refunded a payment in full or in part through Stripe.",
+	"analytics.view_created": "Saved an analytics view.",
+	"analytics.view_updated": "Renamed, changed or shared a saved analytics view.",
+	"analytics.view_deleted": "Deleted a saved analytics view.",
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTIONS;

@@ -19,7 +19,8 @@ adminRoute.options("*", (req, res) => {
 	res.sendStatus(200);
 });
 
-adminRoute.post("/signup", validateSignupFields, handleSignup);
+// Only a signed-in admin can create another admin. This route used to be open to anyone.
+adminRoute.post("/signup", verifyAdminJWT, validateSignupFields, handleSignup);
 adminRoute.post("/login", validateLoginFields, handleLogin);
 adminRoute.get("/account", verifyAdminJWT, handleGetAccount);
 adminRoute.get("/provider-account-requests", verifyAdminJWT, handleGetProviderAccountRequests);

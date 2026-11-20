@@ -2,6 +2,8 @@ import axios from "axios";
 import NotificationModel, { NotificationType } from "../../dal/models/notification.model";
 import UserModel from "../../dal/models/user.model";
 import { pushTargets } from "../../lib/push";
+import { webPushFields } from "../../lib/pushLinks";
+import { webAppUrl } from "../../lib/appIdentity";
 import log from "../../lib/logger";
 
 const ONE_SIGNAL_APP_ID = process.env.ONE_SIGNAL_APP_ID;
@@ -51,6 +53,8 @@ export const sendNotification = async (data: any) => {
 		const response = await oneSignalApi.post("/notifications", {
 			app_id: ONE_SIGNAL_APP_ID,
 			target_channel: "push",
+			// Web-only fields (link, replace-instead-of-stack topic, icons); mobile subscriptions ignore them.
+			...webPushFields({ data: payload?.data }, webAppUrl()),
 			...payload,
 		});
 		return response.data;

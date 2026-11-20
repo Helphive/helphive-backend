@@ -226,12 +226,10 @@ const REPLAY_WAIT_MS = 25_000;
 export const handleReplayWebhook = async (req: Request, res: Response) => {
 	try {
 		if (req.body.confirm !== true) {
-			return res
-				.status(400)
-				.json({
-					message: "Replaying runs the handler again. Send confirm: true to go ahead.",
-					field: "confirm",
-				});
+			return res.status(400).json({
+				message: "Replaying runs the handler again. Send confirm: true to go ahead.",
+				field: "confirm",
+			});
 		}
 		const record = await WebhookEventModel.findById(req.params.id).lean();
 		if (!record) return res.status(404).json({ message: "Webhook event not found." });
@@ -249,11 +247,9 @@ export const handleReplayWebhook = async (req: Request, res: Response) => {
 				record.endpoint === "connected" && record.account ? { stripeAccount: record.account } : undefined,
 			);
 		} catch (error: any) {
-			return res
-				.status(502)
-				.json({
-					message: `Stripe did not return the event: ${String(error?.message ?? "error").slice(0, 200)}`,
-				});
+			return res.status(502).json({
+				message: `Stripe did not return the event: ${String(error?.message ?? "error").slice(0, 200)}`,
+			});
 		}
 
 		const by = req.admin!.email;
@@ -414,7 +410,9 @@ export const handleReplayTask = async (req: Request, res: Response) => {
 		const handler =
 			run.task === "earning-complete"
 				? tasks.handleGoogleCloudTasksEarningComplete
-				: tasks.handleGoogleCloudTasksBookingExpired;
+				: run.task === "booking-no-show"
+					? tasks.handleGoogleCloudTasksBookingNoShow
+					: tasks.handleGoogleCloudTasksBookingExpired;
 		const started = new Date();
 		const result = await new Promise<{ status: number; message: string | null }>((resolve) => {
 			let status = 200;

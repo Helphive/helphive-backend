@@ -3,6 +3,7 @@ import express, { NextFunction, Request, Response } from "express";
 import {
 	handleGoogleCloudTasksChatWindow,
 	handleGoogleCloudTasksBookingExpired,
+	handleGoogleCloudTasksBookingNoShow,
 	handleGoogleCloudTasksEarningComplete,
 } from "../../controllers/webhook-controllers/cloudtasks.controller";
 import { safeEqual } from "../../controllers/user-controllers/utils/token.utils";
@@ -49,6 +50,15 @@ cloudTasksRoute.post(
 	tasksLimiter,
 	verifyHeader,
 	handleGoogleCloudTasksBookingExpired,
+);
+
+// Cancels and refunds an accepted booking nobody started by the end of its shift (scheduled when a provider accepts).
+cloudTasksRoute.post(
+	"/booking-no-show",
+	recordTaskRun("booking-no-show"),
+	tasksLimiter,
+	verifyHeader,
+	handleGoogleCloudTasksBookingNoShow,
 );
 
 // Re-checks whether a booking's customer and provider may still chat (scheduled for the end of a grace period).

@@ -15,6 +15,7 @@ import {
 	sendBookingStartedNotification,
 } from "./utils/provider.utils";
 import { isValidObjectId, withDisplayStatus } from "./utils/booking.utils";
+import { scheduleBookingNoShowCheck } from "./utils/user.utils";
 import { COUNTERPARTY_SELECT, withCounterparties } from "./utils/counterparty.utils";
 import { serializePayment } from "./utils/payment.utils";
 import PayoutModel from "../../dal/models/payout.model";
@@ -379,6 +380,9 @@ export const handleAcceptBooking = async (req: Request, res: Response) => {
 			req,
 		);
 
+		// If nobody starts the job by the end of its shift (plus the grace period) it is cancelled and refunded. Never
+		// fails the acceptance.
+		await scheduleBookingNoShowCheck(accepted, acceptedAt);
 		await sendBookingAcceptedNotification(booking.userId.toString(), user.firstName, accepted);
 		// Customer and provider may now chat (CometChat friends), then the first message opens the conversation.
 		await syncBookingChat(accepted);

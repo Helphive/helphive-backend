@@ -156,6 +156,15 @@ export const EVENT_CATALOGUE = {
 		subjects: ["userId", "bookingId"],
 		properties: {},
 	},
+	"booking.no_show": {
+		description:
+			"A provider had accepted but nobody started the job by the end of its shift plus the grace period; the booking was cancelled and refunded automatically.",
+		subjects: ["userId", "providerId", "bookingId"],
+		properties: {
+			sinceEndMs: "now minus the scheduled end (start plus booked hours)",
+			graceMinutes: "the grace setting that applied",
+		},
+	},
 	"payment.succeeded": {
 		description: "Stripe confirmed the payment.",
 		subjects: ["userId", "bookingId", "paymentId"],

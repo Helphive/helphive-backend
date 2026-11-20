@@ -39,6 +39,7 @@ export interface SettingsSnapshot {
 	"bookings.maxHours": number;
 	"bookings.minLeadTimeMinutes": number;
 	"bookings.expiryMinutesBeforeStart": number;
+	"bookings.noShowGraceMinutes": number;
 	"services.catalogue": ServiceSetting[];
 	"announcements.banner": AnnouncementSetting | null;
 }
@@ -166,6 +167,18 @@ export const SETTING_DEFINITIONS: { [K in SettingKey]: SettingDefinition<K> } = 
 		min: 0,
 		max: 24 * 60,
 		default: 0,
+	},
+	"bookings.noShowGraceMinutes": {
+		key: "bookings.noShowGraceMinutes",
+		group: "bookings",
+		label: "Grace before a job that never started is cancelled",
+		affects:
+			"A booking a provider accepted but never asked to start is cancelled and refunded in full this many minutes after its scheduled end (start plus booked hours). A booking with a start request waiting is never cancelled this way. A longer value also covers bookings already accepted; a shorter one applies to bookings accepted after the change.",
+		kind: "integer",
+		unit: "minutes",
+		min: 0,
+		max: 7 * 24 * 60,
+		default: 60,
 	},
 	"services.catalogue": {
 		key: "services.catalogue",

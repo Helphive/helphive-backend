@@ -44,7 +44,7 @@ const oid = () => new mongoose.Types.ObjectId();
 test("attention: each rule includes what crossed its threshold and leaves the rest out", () => {
 	const now = new Date("2026-11-19T12:00:00Z");
 	const at = (offset: number) => new Date(now.getTime() + offset);
-	const ids = Array.from({ length: 14 }, oid);
+	const ids = Array.from({ length: 17 }, oid);
 	const { items, counts } = ops.buildAttention(
 		{
 			unassignedPaid: [
@@ -57,6 +57,11 @@ test("attention: each rule includes what crossed its threshold and leaves the re
 				{ _id: ids[4], startDate: at(-4 * HOUR), hours: 2 }, // ended 2 h ago: medium
 				{ _id: ids[5], startDate: at(-3 * HOUR), hours: 2.5 }, // ended 30 min ago: within grace
 				{ _id: ids[6], startDate: at(-12 * HOUR), hours: 4 }, // 8 h late: high
+			],
+			acceptedNotStarted: [
+				{ _id: ids[14], startDate: at(-90 * MIN), hours: 4 }, // late, shift still running: medium
+				{ _id: ids[15], startDate: at(-5 * HOUR), hours: 2 }, // shift ended 3 h ago: high
+				{ _id: ids[16], startDate: at(-30 * MIN), hours: 2 }, // under an hour late: not listed
 			],
 			startRequests: [
 				{ _id: ids[7], startDate: at(-HOUR), startRequestedAt: at(-20 * MIN) },
@@ -79,11 +84,13 @@ test("attention: each rule includes what crossed its threshold and leaves the re
 		now,
 	);
 	const listed = items.map((item) => item.link.id);
-	for (const i of [0, 1, 3, 4, 6, 7, 9, 11, 12, 13]) assert.ok(listed.includes(String(ids[i])), `item ${i} listed`);
-	for (const i of [2, 5, 8, 10]) assert.equal(listed.includes(String(ids[i])), false, `item ${i} not listed`);
+	for (const i of [0, 1, 3, 4, 6, 7, 9, 11, 12, 13, 14, 15])
+		assert.ok(listed.includes(String(ids[i])), `item ${i} listed`);
+	for (const i of [2, 5, 8, 10, 16]) assert.equal(listed.includes(String(ids[i])), false, `item ${i} not listed`);
 	assert.deepEqual(counts, {
 		unassigned_near_start: 3,
 		overdue_in_progress: 2,
+		accepted_not_started: 2,
 		start_request_waiting: 1,
 		earning_not_released: 1,
 		payout_failed: 1,
@@ -97,6 +104,12 @@ test("attention: each rule includes what crossed its threshold and leaves the re
 	assert.match(byId.get(String(ids[3]))!.explanation, /passed 10 min ago/);
 	assert.match(byId.get(String(ids[4]))!.explanation, /2 h past its scheduled end/);
 	assert.equal(byId.get(String(ids[6]))!.severity, "high");
+	assert.equal(byId.get(String(ids[14]))!.kind, "accepted_not_started");
+	assert.equal(byId.get(String(ids[14]))!.severity, "medium");
+	assert.match(byId.get(String(ids[14]))!.explanation, /not started 1 h 30 min after its start time/);
+	assert.equal(byId.get(String(ids[15]))!.severity, "high");
+	assert.match(byId.get(String(ids[15]))!.explanation, /never started; the shift ended 3 h ago/);
+	assert.equal(byId.get(String(ids[15]))!.link.type, "booking");
 	assert.equal(byId.get(String(ids[9]))!.link.type, "earning");
 	assert.equal(byId.get(String(ids[11]))!.link.type, "payout");
 	assert.equal(byId.get(String(ids[12]))!.link.type, "payment");
@@ -120,6 +133,7 @@ test("attention: at most perKind items of one kind, with the true count", () => 
 		{
 			unassignedPaid: [],
 			inProgress: [],
+			acceptedNotStarted: [],
 			startRequests: [],
 			pendingEarnings: [],
 			failedPayouts: [],

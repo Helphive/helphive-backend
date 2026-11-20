@@ -193,73 +193,96 @@ export const handleOverview = async (req: Request, res: Response) => {
 			periodMetrics(periods.lastWeek),
 		]);
 
-		const [unassignedPaid, inProgressRows, startRequests, pendingEarnings, failedPayouts, failedRefunds, apps] =
-			await Promise.all([
-				paidUnassigned(new Date(now.getTime() + ATTENTION_THRESHOLDS.unassignedWithinMs)),
-				BookingModel.find(
-					{
-						status: "in progress",
-						startDate: { $lt: new Date(now.getTime() - ATTENTION_THRESHOLDS.overdueGraceMs) },
-					},
-					"_id startDate hours",
-				)
-					.limit(500)
-					.maxTimeMS(T)
-					.lean()
-					.exec(),
-				BookingModel.find({ status: "pending", userApprovalRequested: true }, "_id startDate startRequestedAt")
-					.limit(500)
-					.maxTimeMS(T)
-					.lean()
-					.exec(),
-				EarningModel.find(
-					{
-						status: "pending",
-						createdAt: { $lt: new Date(now.getTime() - ATTENTION_THRESHOLDS.earningReleaseGraceMs) },
-					},
-					"_id createdAt amount",
-				)
-					.limit(500)
-					.maxTimeMS(T)
-					.lean()
-					.exec(),
-				PayoutModel.find(
-					{ status: { $in: ["failed", "cancelled"] }, createdAt: { $gte: lookback } },
-					"_id amount failedAt updatedAt status",
-				)
-					.limit(200)
-					.maxTimeMS(T)
-					.lean()
-					.exec(),
-				PaymentModel.find(
-					{
-						refundId: { $type: "string" },
-						refundStatus: { $in: ["failed", "cancelled"] },
-						refundCreated: { $gte: lookback },
-					},
-					"_id refundAmount refundStatus refundCreated updatedAt",
-				)
-					.limit(200)
-					.maxTimeMS(T)
-					.lean()
-					.exec(),
-				ProviderApplicationModel.find(
-					{
-						status: "pending",
-						createdAt: { $lt: new Date(now.getTime() - ATTENTION_THRESHOLDS.applicationWaitMs) },
-					},
-					"_id createdAt",
-				)
-					.sort({ createdAt: 1 })
-					.limit(200)
-					.maxTimeMS(T)
-					.lean()
-					.exec(),
-			]);
+		const [
+			unassignedPaid,
+			inProgressRows,
+			startRequests,
+			pendingEarnings,
+			failedPayouts,
+			failedRefunds,
+			apps,
+			acceptedNotStarted,
+		] = await Promise.all([
+			paidUnassigned(new Date(now.getTime() + ATTENTION_THRESHOLDS.unassignedWithinMs)),
+			BookingModel.find(
+				{
+					status: "in progress",
+					startDate: { $lt: new Date(now.getTime() - ATTENTION_THRESHOLDS.overdueGraceMs) },
+				},
+				"_id startDate hours",
+			)
+				.limit(500)
+				.maxTimeMS(T)
+				.lean()
+				.exec(),
+			BookingModel.find({ status: "pending", userApprovalRequested: true }, "_id startDate startRequestedAt")
+				.limit(500)
+				.maxTimeMS(T)
+				.lean()
+				.exec(),
+			EarningModel.find(
+				{
+					status: "pending",
+					createdAt: { $lt: new Date(now.getTime() - ATTENTION_THRESHOLDS.earningReleaseGraceMs) },
+				},
+				"_id createdAt amount",
+			)
+				.limit(500)
+				.maxTimeMS(T)
+				.lean()
+				.exec(),
+			PayoutModel.find(
+				{ status: { $in: ["failed", "cancelled"] }, createdAt: { $gte: lookback } },
+				"_id amount failedAt updatedAt status",
+			)
+				.limit(200)
+				.maxTimeMS(T)
+				.lean()
+				.exec(),
+			PaymentModel.find(
+				{
+					refundId: { $type: "string" },
+					refundStatus: { $in: ["failed", "cancelled"] },
+					refundCreated: { $gte: lookback },
+				},
+				"_id refundAmount refundStatus refundCreated updatedAt",
+			)
+				.limit(200)
+				.maxTimeMS(T)
+				.lean()
+				.exec(),
+			ProviderApplicationModel.find(
+				{
+					status: "pending",
+					createdAt: { $lt: new Date(now.getTime() - ATTENTION_THRESHOLDS.applicationWaitMs) },
+				},
+				"_id createdAt",
+			)
+				.sort({ createdAt: 1 })
+				.limit(200)
+				.maxTimeMS(T)
+				.lean()
+				.exec(),
+			BookingModel.find(
+				{
+					status: "pending",
+					providerId: { $ne: null },
+					userApprovalRequested: { $ne: true },
+					startDate: { $lt: new Date(now.getTime() - ATTENTION_THRESHOLDS.notStartedAfterMs) },
+				},
+				"_id startDate hours",
+			)
+				.sort({ startDate: 1 })
+				.limit(500)
+				.maxTimeMS(T)
+				.lean()
+				.exec(),
+		]);
 		const attention = buildAttention(
 			{
 				unassignedPaid: unassignedPaid as any,
 				inProgress: inProgressRows as any,
+				acceptedNotStarted: acceptedNotStarted as any,
 				startRequests: startRequests as any,
 				pendingEarnings: pendingEarnings as any,
 				failedPayouts: failedPayouts as any,

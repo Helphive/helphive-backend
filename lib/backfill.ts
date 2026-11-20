@@ -8,6 +8,7 @@
 import { buildEvent, type EventInput } from "./events";
 import { EXPIRED_CANCELLATION_REASON } from "../controllers/user-controllers/utils/booking.utils";
 import type { EventType } from "./eventCatalogue";
+import { NO_SHOW_CANCELLATION_REASON } from "./noShow";
 
 type Id = { toString(): string } | string | null | undefined;
 
@@ -89,6 +90,9 @@ const isExpired = (booking: any) =>
 		!booking.providerId &&
 		booking.cancelledAt &&
 		new Date(booking.cancelledAt).getTime() >= new Date(booking.startDate).getTime());
+
+/** Cancelled automatically because nobody started it (lib/noShow.ts). */
+const isNoShow = (booking: any) => booking.cancellationReason === NO_SHOW_CANCELLATION_REASON;
 
 export const deriveBookingEvents = (booking: any): BackfillEvent[] => {
 	const subjects = { userId: booking?.userId, providerId: booking?.providerId ?? undefined, bookingId: booking?._id };
@@ -178,7 +182,20 @@ export const deriveBookingEvents = (booking: any): BackfillEvent[] => {
 					subjects: { userId: booking.userId, bookingId: booking._id },
 				})
 			: null,
-		booking?.status === "cancelled" && !isExpired(booking)
+		booking?.status === "cancelled" && isNoShow(booking)
+			? derived("booking.no_show", booking._id, booking.cancelledAt, {
+					actor: { type: "system" },
+					subjects,
+					properties: {
+						sinceEndMs:
+							startDate && validDate(booking.cancelledAt) && typeof booking.hours === "number"
+								? (validDate(booking.cancelledAt) as Date).getTime() -
+									(startDate.getTime() + booking.hours * 60 * 60 * 1000)
+								: null,
+					},
+				})
+			: null,
+		booking?.status === "cancelled" && !isExpired(booking) && !isNoShow(booking)
 			? derived("booking.cancelled", booking._id, booking.cancelledAt, {
 					actor: byWhom(booking.cancelledBy) === "customer" ? customer : provider,
 					subjects,

@@ -340,6 +340,7 @@ test("overview attention items and the live view keep the operator's explanation
 		{
 			unassignedPaid: [{ _id: bookingDoc._id, startDate: new Date(now.getTime() + 40 * 60 * 1000) }],
 			inProgress: [],
+			acceptedNotStarted: [],
 			startRequests: [],
 			pendingEarnings: [],
 			failedPayouts: [],

@@ -24,6 +24,8 @@ export const REPLAYABLE_TASKS: Record<string, string> = {
 		"Releases the provider's earning if it is still pending: one Stripe transfer (same idempotency key as the original run) and the balance credit, once.",
 	"booking-expired":
 		"Cancels the booking if it is still pending with no provider, notifies the customer and refunds any payment, once.",
+	"booking-no-show":
+		"Cancels the booking if it is still accepted, not started and past the end of its shift, tells both people and refunds the payment, once; if this rule already cancelled it, only makes sure the refund was requested.",
 };
 
 /** Stripe keeps events for 30 days; a day of margin so a replay never races the deletion. */

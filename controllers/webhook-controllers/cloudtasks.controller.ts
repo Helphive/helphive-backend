@@ -10,6 +10,19 @@ import { describeBooking, formatMoney, isValidObjectId } from "../user-controlle
 import { refundPaymentIfPaid } from "../user-controllers/utils/auth.utils";
 import { emitEvent } from "../../lib/events";
 import { syncBookingChat } from "../../lib/chat/chatSync";
+import { sendBookingEvent } from "../../lib/chat/sendBookingEvent";
+import { getSettings } from "../../lib/settings";
+import {
+	decideNoShow,
+	noShowCheckAt,
+	noShowDueAt,
+	noShowTransitionFilter,
+	NO_SHOW_CANCELLATION_REASON,
+} from "../../lib/noShow";
+import {
+	createGoogleCloudTaskBookingNoShowTrigger,
+	sendBookingNoShowNotification,
+} from "../user-controllers/utils/user.utils";
 import { blocksEarningRelease, recordBlocked } from "../../lib/risk/holds";
 import log from "../../lib/logger";
 
@@ -195,6 +208,92 @@ const sendBookingExpiredNotification = async (userId: string, booking: any) => {
 		await storeNotification(title, message, userId, "BookingDetails", "booking_expired", bookingId);
 	} catch (error) {
 		log.error(`Error sending booking expired notification for booking ID ${bookingId}`, error);
+	}
+};
+
+/**
+ * The no-show check, scheduled when a provider accepts (lib/noShow.ts has the rule). A booking still accepted with no
+ * start request once its shift and the grace period are over is cancelled, both people are told (notification and the
+ * chat's cancelled card) and the customer is refunded in full. A check that runs before the due time schedules itself
+ * again. Safe to run twice: the cancellation is one conditional update, and a run that failed at the refund finds the
+ * booking already cancelled by this rule and only requests the refund (same idempotency key).
+ */
+export const handleGoogleCloudTasksBookingNoShow = async (req: Request, res: Response) => {
+	try {
+		const { bookingId } = req.body;
+
+		if (!isValidObjectId(bookingId)) {
+			return res.status(200).json({ message: "Booking ID is required" });
+		}
+
+		const existing = await BookingModel.findById(bookingId).exec();
+		if (!existing) {
+			return res.status(200).json({ message: "Booking not found" });
+		}
+
+		const now = new Date();
+		const graceMinutes = (await getSettings())["bookings.noShowGraceMinutes"];
+		const decision = decideNoShow(existing, now, graceMinutes);
+
+		if (decision === "not_applicable") {
+			return res.status(200).json({ message: "Booking is not pending with a provider and no start request" });
+		}
+
+		if (decision === "not_due") {
+			const dueAt = noShowDueAt(existing, graceMinutes) as Date;
+			await createGoogleCloudTaskBookingNoShowTrigger(String(existing._id), noShowCheckAt(dueAt, now));
+			return res.status(200).json({ message: "Booking is not due yet; the check was scheduled again" });
+		}
+
+		if (decision === "refund_only") {
+			const retried = await refundPaymentIfPaid(String(existing._id));
+			return res.status(200).json({
+				message:
+					retried.outcome === "refund_requested"
+						? "Booking was cancelled earlier (not started); the refund was requested now"
+						: "Booking already cancelled (not started) and its refund already handled",
+			});
+		}
+
+		const booking = await BookingModel.findOneAndUpdate(
+			noShowTransitionFilter(existing._id, existing.providerId),
+			{ $set: { status: "cancelled", cancelledAt: now, cancellationReason: NO_SHOW_CANCELLATION_REASON } },
+			{ new: true },
+		).exec();
+		if (!booking) {
+			return res.status(200).json({ message: "Booking is not pending any more" });
+		}
+		emitEvent({
+			type: "booking.no_show",
+			actor: { type: "system" },
+			subjects: { userId: booking.userId, providerId: booking.providerId, bookingId: booking._id },
+			properties: {
+				sinceEndMs: now.getTime() - (booking.startDate.getTime() + booking.hours * 60 * 60 * 1000),
+				graceMinutes,
+			},
+		});
+
+		await sendBookingNoShowNotification(String(booking.userId), String(booking.providerId), booking);
+		// Nobody is waiting on this response, so the chat card is sent to the end (it never throws). Sent as the customer.
+		await sendBookingEvent(booking._id, "cancelled");
+		try {
+			await syncBookingChat(booking);
+		} catch (error) {
+			log.error("Error re-deciding the chat after a not-started cancellation", error);
+		}
+
+		// Last, so a failure here answers 500 and the retry finds the booking cancelled and only requests the refund.
+		const refund = await refundPaymentIfPaid(String(booking._id));
+
+		return res.status(200).json({
+			message:
+				refund.outcome === "refund_requested"
+					? "Booking cancelled (not started) and refund requested"
+					: "Booking cancelled (not started); nothing to refund",
+		});
+	} catch (error) {
+		log.error("Error handling the no-show check", error);
+		return res.status(500).json({ message: "Internal server error" });
 	}
 };
 

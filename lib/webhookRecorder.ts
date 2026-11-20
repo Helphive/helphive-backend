@@ -126,7 +126,7 @@ export const taskOutcomeFor = (status: number, message: string | null): TaskOutc
 	if (status >= 400) return "failed";
 	if (
 		message &&
-		/not found|already|not pending|not completed|missing|required|insufficient|not completed stripe|on hold/i.test(
+		/not found|already|not pending|not due|not completed|missing|required|insufficient|not completed stripe|on hold/i.test(
 			message,
 		)
 	) {

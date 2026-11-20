@@ -227,6 +227,8 @@ export const ATTENTION_THRESHOLDS = {
 	unassignedWithinMs: 3 * HOUR,
 	/** In progress this long past its scheduled end (start + booked hours). */
 	overdueGraceMs: 1 * HOUR,
+	/** Accepted, with no start request, this long past its start time. */
+	notStartedAfterMs: 1 * HOUR,
 	/** A start request the customer has not approved for this long. */
 	startRequestWaitMs: 15 * MINUTE,
 	/** An earning still pending this long after it was created (the release task runs 30 s after completion). */
@@ -242,6 +244,7 @@ export const ATTENTION_THRESHOLDS = {
 export type AttentionKind =
 	| "unassigned_near_start"
 	| "overdue_in_progress"
+	| "accepted_not_started"
 	| "start_request_waiting"
 	| "earning_not_released"
 	| "payout_failed"
@@ -263,6 +266,8 @@ export interface AttentionItem {
 export interface AttentionCandidates {
 	unassignedPaid: { _id: unknown; startDate: Date }[];
 	inProgress: { _id: unknown; startDate: Date; hours: number }[];
+	/** Accepted (a provider, still pending) with no start request, already past the start time. */
+	acceptedNotStarted: { _id: unknown; startDate: Date; hours: number }[];
 	startRequests: { _id: unknown; startDate: Date; startRequestedAt?: Date | null }[];
 	pendingEarnings: { _id: unknown; createdAt: Date; amount: number }[];
 	failedPayouts: { _id: unknown; amount: number; failedAt?: Date | null; updatedAt?: Date | null; status: string }[];
@@ -336,6 +341,24 @@ export const buildAttention = (
 		});
 	}
 
+	// The no-show check (lib/noShow.ts) cancels and refunds these once the shift and its grace period are over; until
+	// then, and if that check ever fails to run, they are listed here.
+	for (const b of c.acceptedNotStarted) {
+		const late = n - time(b.startDate);
+		if (!(late > t.notStartedAfterMs)) continue;
+		const sinceEnd = late - Number(b.hours || 0) * HOUR;
+		items.push({
+			kind: "accepted_not_started",
+			severity: sinceEnd > 0 ? "high" : "medium",
+			explanation:
+				sinceEnd > 0
+					? `Accepted but never started; the shift ended ${formatDuration(sinceEnd)} ago. It is cancelled and refunded automatically after the grace period.`
+					: `Accepted but not started ${formatDuration(late)} after its start time. If nobody starts it, it is cancelled and refunded after the shift ends.`,
+			at: new Date(b.startDate),
+			link: { type: "booking", id: id(b._id) },
+		});
+	}
+
 	for (const b of c.startRequests) {
 		const since = time(b.startRequestedAt ?? b.startDate);
 		const waited = n - since;
@@ -400,6 +423,7 @@ export const buildAttention = (
 	const counts = {
 		unassigned_near_start: 0,
 		overdue_in_progress: 0,
+		accepted_not_started: 0,
 		start_request_waiting: 0,
 		earning_not_released: 0,
 		payout_failed: 0,

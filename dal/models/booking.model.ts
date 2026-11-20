@@ -36,10 +36,11 @@ export interface Booking extends Document {
 	 */
 	location?: BookingLocation | null;
 	/**
-	 * When each booking event message was claimed for sending to the chat (lib/chat/sendBookingEvent.ts). Set before
-	 * the message is sent, so a booking event is sent at most once. Not selected by default: never in a response.
+	 * Each booking event message the server claimed for sending to the chat (lib/chat/sendBookingEvent.ts): when, and the
+	 * CometChat uid it is sent as. Set before the message is sent, so an event is sent at most once, and kept as the proof of
+	 * authorship (lib/chat/bookingEvents.ts verifyBookingEventAuthorship). Not selected by default: never in a response.
 	 */
-	chatEvents?: { accepted?: Date | null; started?: Date | null; completed?: Date | null; cancelled?: Date | null };
+	chatEvents?: Partial<Record<"accepted" | "started" | "completed" | "cancelled", { at: Date; from: string } | null>>;
 }
 
 export const LOCATION_SOURCES = ["search", "map", "current_location"] as const;
@@ -165,12 +166,15 @@ const bookingSchema: Schema = new Schema(
 		},
 		chatEvents: {
 			type: new Schema(
-				{
-					accepted: { type: Date, default: null },
-					started: { type: Date, default: null },
-					completed: { type: Date, default: null },
-					cancelled: { type: Date, default: null },
-				},
+				Object.fromEntries(
+					["accepted", "started", "completed", "cancelled"].map((event) => [
+						event,
+						{
+							type: new Schema({ at: { type: Date }, from: { type: String } }, { _id: false }),
+							default: undefined,
+						},
+					]),
+				),
 				{ _id: false },
 			),
 			default: undefined,

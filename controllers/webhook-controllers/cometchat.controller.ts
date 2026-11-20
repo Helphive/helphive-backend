@@ -4,7 +4,7 @@
 //    rules (attachment type or size, or no booking relationship between the two people), and pushes a notification
 //    to the receiver's signed-in devices (lib/push.ts): only while the two may chat, never across a block, not while
 //    the receiver has that conversation open, at most one per conversation per CHAT_PUSH_MIN_INTERVAL_SECONDS
-//    (never for a booking event message: the booking notifications cover those, and it is not counted as a
+//    (never for a booking event the server sent itself: the booking notifications cover those, and it is not counted as a
 //    message a person sent);
 //  - user_blocked / user_unblocked: mirrors blocks made inside the chat UI, so pushes respect them.
 // Everything else is acknowledged and ignored.
@@ -15,14 +15,9 @@ import WebhookEventModel from "../../dal/models/webhookEvent.model";
 import { ChatBlockModel, ChatLinkModel } from "../../dal/models/chat.model";
 import { chatConfig } from "../../config/chat";
 import { cometChat, toChatMessage, type ChatMessage } from "../../lib/chat/cometchat";
-import {
-	attachmentViolation,
-	isPersonMessage,
-	messageMetadata,
-	shouldPushChatMessage,
-	webhookEventKey,
-} from "../../lib/chat/chatRules";
+import { attachmentViolation, messageMetadata, shouldPushChatMessage, webhookEventKey } from "../../lib/chat/chatRules";
 import { syncChatPair } from "../../lib/chat/chatSync";
+import { isGenuineBookingEvent } from "../../lib/chat/eventAuthorship";
 import { chatPushContent } from "../../lib/push";
 import { webAppUrl } from "../../lib/appIdentity";
 import { TtlCache } from "../../lib/places";
@@ -89,6 +84,8 @@ const handleMessageSent = async (data: any) => {
 	if (!message) return;
 	if (!(await firstDelivery(webhookEventKey("message_sent", data), "message_sent"))) return;
 	const config = chatConfig();
+	// Only a message the server itself sent as a booking event is exempt (a person can send the same metadata and text).
+	const genuineEvent = await isGenuineBookingEvent(message);
 
 	const sender = isObjectId(message.sender)
 		? await UserModel.findById(message.sender).select("firstName roles chatSuspended suspended").lean().exec()
@@ -151,7 +148,7 @@ const handleMessageSent = async (data: any) => {
 				blockedEitherWay: !!blocked,
 				receiverChatSuspended: !!receiver.chatSuspended || !!receiver.suspended,
 				removed,
-				bookingEvent: !isPersonMessage(message),
+				bookingEvent: genuineEvent,
 			})
 		) {
 			recentPushes.set(pairKey, true);
@@ -171,8 +168,8 @@ const handleMessageSent = async (data: any) => {
 		}
 	}
 
-	// Booking events are system content (lib/chat/bookingEvents.ts): not counted as something a person sent.
-	if (!isPersonMessage(message)) return;
+	// Booking events the server sent are system content: not counted as something a person sent.
+	if (genuineEvent) return;
 	const providerId = sender?.roles?.Provider ? sender._id : receiver?.roles?.Provider ? receiver._id : null;
 	emitEvent({
 		type: "chat.message_sent",

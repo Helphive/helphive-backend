@@ -22,6 +22,7 @@ import {
 	syncBookingChat,
 } from "../../lib/chat/chatSync";
 import { openChatToken, sealChatToken, revokeChatToken } from "../../lib/chat/chatTokens";
+import { isGenuineBookingEvent } from "../../lib/chat/eventAuthorship";
 import { TtlCache } from "../../lib/places";
 import { emitEvent, userActorType } from "../../lib/events";
 import { isValidObjectId } from "./utils/booking.utils";
@@ -270,7 +271,7 @@ export const handleCreateReport = async (req: Request, res: Response) => {
 				if (error instanceof CometChatError && error.status === 404) return null;
 				throw error;
 			});
-			if (fetched?.bookingEvent) {
+			if (fetched && (await isGenuineBookingEvent(fetched))) {
 				return res.status(400).json({
 					message: "That is an automatic booking update and cannot be reported.",
 					code: "message_not_reportable",

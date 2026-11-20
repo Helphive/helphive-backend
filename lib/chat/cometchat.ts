@@ -3,7 +3,7 @@
 // Docs: https://www.cometchat.com/docs/rest-api/chat-apis
 import axios from "axios";
 import { chatConfig, type ChatConfig } from "../../config/chat";
-import { isBookingEventMessage } from "./bookingEvents";
+import { claimedBookingEvent, type BookingEvent } from "./bookingEvents";
 
 export class CometChatError extends Error {
 	constructor(
@@ -75,8 +75,8 @@ export interface ChatMessage {
 	attachments: { mimeType: string | null; size: number | null; extension: string | null }[];
 	sentAt: number | null;
 	deletedAt: number | null;
-	/** A system booking event (lib/chat/bookingEvents.ts): metadata and fixed text both match. Never the metadata itself. */
-	bookingEvent: boolean;
+	/** The booking event the message claims to be (metadata and fixed text match). A claim, not proof of authorship. */
+	bookingEvent: { event: BookingEvent; bookingId: string } | null;
 }
 
 /** A CometChat message reduced to what this server uses (no URLs to attachments, no metadata). */
@@ -102,7 +102,7 @@ export const toChatMessage = (raw: any): ChatMessage | null => {
 		attachments,
 		sentAt: typeof raw.sentAt === "number" ? raw.sentAt : null,
 		deletedAt: typeof raw.deletedAt === "number" ? raw.deletedAt : null,
-		bookingEvent: isBookingEventMessage(
+		bookingEvent: claimedBookingEvent(
 			typeof data.text === "string" ? data.text : null,
 			data.metadata ?? raw.metadata,
 		),

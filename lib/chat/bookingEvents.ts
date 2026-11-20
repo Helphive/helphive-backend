@@ -39,13 +39,16 @@ export const parseBookingEventMetadata = (metadata: unknown): { event: BookingEv
 };
 
 /**
- * Whether a message is a system booking event: valid metadata AND exactly that event's fallback text. The text check
- * keeps the exemptions (no push, not reportable) from covering anything a person could write: a person who puts the
- * metadata on a message of their own can only get one of these four fixed sentences exempted.
+ * The event a message CLAIMS to be: valid metadata AND exactly that event's fixed sentence. This is only the shape:
+ * anyone can send such a message through the CometChat SDK. Whether the server really sent it is
+ * verifyBookingEventAuthorship below.
  */
-export const isBookingEventMessage = (text: string | null | undefined, metadata: unknown): boolean => {
+export const claimedBookingEvent = (
+	text: string | null | undefined,
+	metadata: unknown,
+): { event: BookingEvent; bookingId: string } | null => {
 	const parsed = parseBookingEventMetadata(metadata);
-	return !!parsed && text === BOOKING_EVENT_TEXT[parsed.event];
+	return parsed && text === BOOKING_EVENT_TEXT[parsed.event] ? parsed : null;
 };
 
 /**
@@ -92,3 +95,59 @@ export const shouldSendBookingEvent = (
 
 /** The booking field that records the event was sent (claimed atomically before sending). */
 export const bookingEventClaimPath = (event: BookingEvent) => `chatEvents.${event}`;
+
+/** The message may be sent this long before the claim time (clock difference between this server and CometChat). */
+export const EVENT_WINDOW_BEFORE_MS = 10_000;
+/**
+ * ... and this long after it. The send follows the claim within milliseconds (the CometChat call times out after 5 s);
+ * two minutes leaves room for a slow call and CometChat's whole-second timestamps, and a replay later than that is
+ * treated as a person's message.
+ */
+export const EVENT_WINDOW_AFTER_MS = 120_000;
+
+export type Authorship = "genuine" | "not_an_event" | "other_pair" | "not_claimed" | "wrong_sender" | "outside_window";
+
+type Claim = { at?: Date | string | null; from?: string | null } | null | undefined;
+
+/**
+ * Whether the server itself sent this message. What the message says proves nothing (any person can send the same
+ * metadata and sentence), so this is decided from state the server owns: the named booking belongs to exactly this
+ * sender and receiver, the server claimed that event on the booking, the sender is the one the sender rule gave the
+ * claim, and the message was sent within a short window of the claim. Everything else is a person's message.
+ */
+export const verifyBookingEventAuthorship = (input: {
+	/** From the message: who sent it to whom, when (ms), and the event it claims (claimedBookingEvent). */
+	message: {
+		sender: string;
+		receiver: string;
+		sentAtMs: number | null;
+		claim: { event: BookingEvent; bookingId: string } | null;
+	};
+	/** The booking named by the message (null when it does not exist). `chatEvents` is the claim record. */
+	booking: {
+		_id: Id;
+		userId: Id;
+		providerId?: Id | null;
+		chatEvents?: Partial<Record<BookingEvent, Claim>> | null;
+	} | null;
+}): Authorship => {
+	const { message, booking } = input;
+	if (!message.claim) return "not_an_event";
+	if (!booking || String(booking._id) !== message.claim.bookingId || !booking.providerId) return "other_pair";
+	const customer = String(booking.userId);
+	const provider = String(booking.providerId);
+	const pair = new Set([message.sender, message.receiver]);
+	if (message.sender === message.receiver || !pair.has(customer) || !pair.has(provider)) return "other_pair";
+	const claim = booking.chatEvents?.[message.claim.event];
+	const claimedAt = claim?.at ? new Date(claim.at).getTime() : NaN;
+	if (!claim || !Number.isFinite(claimedAt) || !claim.from) return "not_claimed";
+	const expected = bookingEventSender(message.claim.event, {
+		customerId: customer,
+		providerId: provider,
+		actorId: claim.from,
+	}).from;
+	if (message.sender !== expected) return "wrong_sender";
+	const gap = message.sentAtMs === null ? NaN : message.sentAtMs - claimedAt;
+	if (!(gap >= -EVENT_WINDOW_BEFORE_MS && gap <= EVENT_WINDOW_AFTER_MS)) return "outside_window";
+	return "genuine";
+};

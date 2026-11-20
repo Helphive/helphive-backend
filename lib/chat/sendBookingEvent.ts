@@ -67,19 +67,19 @@ export const sendBookingEvent = async (
 		const decision = !customer || !provider ? "chat_closed" : shouldSendBookingEvent(event, booking, pair);
 		if (decision !== "send") return decision;
 
-		// Claim first, atomically: a retry, a double tap or a replayed webhook finds it claimed and sends nothing.
-		const path = bookingEventClaimPath(event);
-		const claimed = await BookingModel.updateOne(
-			{ _id: booking._id, [path]: null },
-			{ $set: { [path]: now } },
-		).exec();
-		if (claimed.modifiedCount !== 1) return "already_sent";
-
 		const { from, to } = bookingEventSender(event, {
 			customerId: booking.userId,
 			providerId: booking.providerId,
 			actorId: options.actorId,
 		});
+		// Claim first, atomically: a retry, a double tap or a replayed webhook finds it claimed and sends nothing. The claim
+		// records when and as whom: it is the proof the server sent the message (verifyBookingEventAuthorship).
+		const path = bookingEventClaimPath(event);
+		const claimed = await BookingModel.updateOne(
+			{ _id: booking._id, [`${path}.at`]: null },
+			{ $set: { [path]: { at: now, from } } },
+		).exec();
+		if (claimed.modifiedCount !== 1) return "already_sent";
 		try {
 			await client.sendText(from, to, BOOKING_EVENT_TEXT[event], bookingEventMetadata(event, booking._id as any));
 		} catch (error) {

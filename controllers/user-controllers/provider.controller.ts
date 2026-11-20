@@ -18,8 +18,8 @@ import { isValidObjectId, withDisplayStatus } from "./utils/booking.utils";
 import { COUNTERPARTY_SELECT, withCounterparties } from "./utils/counterparty.utils";
 import { serializePayment } from "./utils/payment.utils";
 import PayoutModel from "../../dal/models/payout.model";
-import { sendCometChatMessage } from "./utils/cometchat.util";
 import { syncBookingChat } from "../../lib/chat/chatSync";
+import { notifyBookingEvent } from "../../lib/chat/sendBookingEvent";
 import { publicValidationErrors } from "../../middleware/sanitizeInput";
 import { storedFileInfo } from "../../middleware/uploads";
 import { emitEvent } from "../../lib/events";
@@ -382,7 +382,7 @@ export const handleAcceptBooking = async (req: Request, res: Response) => {
 		await sendBookingAcceptedNotification(booking.userId.toString(), user.firstName, accepted);
 		// Customer and provider may now chat (CometChat friends), then the first message opens the conversation.
 		await syncBookingChat(accepted);
-		await sendCometChatMessage(booking.userId.toString(), String(user._id));
+		await notifyBookingEvent(accepted._id, "accepted");
 
 		res.status(200).json({ message: "Booking accepted successfully." });
 	} catch (error) {

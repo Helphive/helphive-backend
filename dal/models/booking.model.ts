@@ -35,6 +35,11 @@ export interface Booking extends Document {
 	 * address the app sent. latitude/longitude stay those of the pin.
 	 */
 	location?: BookingLocation | null;
+	/**
+	 * When each booking event message was claimed for sending to the chat (lib/chat/sendBookingEvent.ts). Set before
+	 * the message is sent, so a booking event is sent at most once. Not selected by default: never in a response.
+	 */
+	chatEvents?: { accepted?: Date | null; started?: Date | null; completed?: Date | null; cancelled?: Date | null };
 }
 
 export const LOCATION_SOURCES = ["search", "map", "current_location"] as const;
@@ -157,6 +162,19 @@ const bookingSchema: Schema = new Schema(
 				{ _id: false },
 			),
 			default: undefined,
+		},
+		chatEvents: {
+			type: new Schema(
+				{
+					accepted: { type: Date, default: null },
+					started: { type: Date, default: null },
+					completed: { type: Date, default: null },
+					cancelled: { type: Date, default: null },
+				},
+				{ _id: false },
+			),
+			default: undefined,
+			select: false,
 		},
 	},
 	{ timestamps: true },

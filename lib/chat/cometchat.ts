@@ -3,6 +3,7 @@
 // Docs: https://www.cometchat.com/docs/rest-api/chat-apis
 import axios from "axios";
 import { chatConfig, type ChatConfig } from "../../config/chat";
+import { isBookingEventMessage } from "./bookingEvents";
 
 export class CometChatError extends Error {
 	constructor(
@@ -74,6 +75,8 @@ export interface ChatMessage {
 	attachments: { mimeType: string | null; size: number | null; extension: string | null }[];
 	sentAt: number | null;
 	deletedAt: number | null;
+	/** A system booking event (lib/chat/bookingEvents.ts): metadata and fixed text both match. Never the metadata itself. */
+	bookingEvent: boolean;
 }
 
 /** A CometChat message reduced to what this server uses (no URLs to attachments, no metadata). */
@@ -99,6 +102,10 @@ export const toChatMessage = (raw: any): ChatMessage | null => {
 		attachments,
 		sentAt: typeof raw.sentAt === "number" ? raw.sentAt : null,
 		deletedAt: typeof raw.deletedAt === "number" ? raw.deletedAt : null,
+		bookingEvent: isBookingEventMessage(
+			typeof data.text === "string" ? data.text : null,
+			data.metadata ?? raw.metadata,
+		),
 	};
 };
 
@@ -220,11 +227,18 @@ export const createCometChatClient = (options: { config?: () => ChatConfig; tran
 				"ERR_MESSAGE_NOT_FOUND",
 			]),
 
-		sendText: (fromUid: string, toUid: string, text: string) =>
+		/** `metadata` rides in data.metadata (CometChat's place for it); clients read it with getMetadata(). */
+		sendText: (fromUid: string, toUid: string, text: string, metadata?: Record<string, unknown>) =>
 			call({
 				method: "POST",
 				path: "/messages",
-				body: { category: "message", type: "text", data: { text }, receiver: toUid, receiverType: "user" },
+				body: {
+					category: "message",
+					type: "text",
+					data: metadata ? { text, metadata } : { text },
+					receiver: toUid,
+					receiverType: "user",
+				},
 				onBehalfOf: fromUid,
 			}),
 	};

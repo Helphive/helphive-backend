@@ -3,7 +3,9 @@
 //  - message_sent: records the message as an event (counts and kinds, never the text), deletes it if it breaks the
 //    rules (attachment type or size, or no booking relationship between the two people), and pushes a notification
 //    to the receiver's signed-in devices (lib/push.ts): only while the two may chat, never across a block, not while
-//    the receiver has that conversation open, at most one per conversation per CHAT_PUSH_MIN_INTERVAL_SECONDS;
+//    the receiver has that conversation open, at most one per conversation per CHAT_PUSH_MIN_INTERVAL_SECONDS
+//    (never for a booking event message: the booking notifications cover those, and it is not counted as a
+//    message a person sent);
 //  - user_blocked / user_unblocked: mirrors blocks made inside the chat UI, so pushes respect them.
 // Everything else is acknowledged and ignored.
 import { Request, Response } from "express";
@@ -13,7 +15,13 @@ import WebhookEventModel from "../../dal/models/webhookEvent.model";
 import { ChatBlockModel, ChatLinkModel } from "../../dal/models/chat.model";
 import { chatConfig } from "../../config/chat";
 import { cometChat, toChatMessage, type ChatMessage } from "../../lib/chat/cometchat";
-import { attachmentViolation, messageMetadata, shouldPushChatMessage, webhookEventKey } from "../../lib/chat/chatRules";
+import {
+	attachmentViolation,
+	isPersonMessage,
+	messageMetadata,
+	shouldPushChatMessage,
+	webhookEventKey,
+} from "../../lib/chat/chatRules";
 import { syncChatPair } from "../../lib/chat/chatSync";
 import { chatPushContent } from "../../lib/push";
 import { webAppUrl } from "../../lib/appIdentity";
@@ -143,6 +151,7 @@ const handleMessageSent = async (data: any) => {
 				blockedEitherWay: !!blocked,
 				receiverChatSuspended: !!receiver.chatSuspended || !!receiver.suspended,
 				removed,
+				bookingEvent: !isPersonMessage(message),
 			})
 		) {
 			recentPushes.set(pairKey, true);
@@ -162,6 +171,8 @@ const handleMessageSent = async (data: any) => {
 		}
 	}
 
+	// Booking events are system content (lib/chat/bookingEvents.ts): not counted as something a person sent.
+	if (!isPersonMessage(message)) return;
 	const providerId = sender?.roles?.Provider ? sender._id : receiver?.roles?.Provider ? receiver._id : null;
 	emitEvent({
 		type: "chat.message_sent",

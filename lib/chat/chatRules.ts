@@ -205,7 +205,10 @@ export const shouldPushChatMessage = (input: {
 	blockedEitherWay: boolean;
 	receiverChatSuspended: boolean;
 	removed: boolean;
+	/** A system booking event: the booking notifications already cover those moments, so never a chat push. */
+	bookingEvent?: boolean;
 }) =>
+	!input.bookingEvent &&
 	input.enabled &&
 	input.receiverType === "user" &&
 	input.allowed &&
@@ -214,6 +217,12 @@ export const shouldPushChatMessage = (input: {
 	!input.blockedEitherWay &&
 	!input.receiverChatSuspended &&
 	!input.removed;
+
+/**
+ * Whether a message counts as something a person said: booking events are system content, so they are not counted in
+ * message statistics (the chat.message_sent event) and cannot be reported.
+ */
+export const isPersonMessage = (message: Pick<ChatMessage, "bookingEvent">) => !message.bookingEvent;
 
 /**
  * Deduplication key for a webhook delivery (CometChat sends no delivery id), so a retried message is recorded and

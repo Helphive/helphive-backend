@@ -10,6 +10,7 @@ import { sendBookingCompletedNotification } from "./auth.utils";
 import { emitEvent } from "../../../lib/events";
 import type { ActorType } from "../../../lib/requestContext";
 import { syncBookingChat } from "../../../lib/chat/chatSync";
+import { notifyBookingEvent } from "../../../lib/chat/sendBookingEvent";
 import { earningReleaseAt, getSettings, providerShareFor } from "../../../lib/settings";
 
 type Id = mongoose.Types.ObjectId | string;
@@ -61,7 +62,13 @@ export const cancelBookingTransition = async (input: CancelInput): Promise<Booki
 		cancelled.providerId ? cancelled.providerId.toString() : "",
 		cancelled,
 	);
-	// Chat stays open for the grace period, then closes (scheduled check). In the background; never fails this.
+	// A booking that had a provider says so in the chat (sent as whoever cancelled it, the customer for an admin), before
+	// the chat relationship is re-decided. Chat stays open for the grace period, then closes (scheduled check).
+	if (cancelled.providerId) {
+		await notifyBookingEvent(cancelled._id, "cancelled", {
+			actorId: input.by === "admin" ? null : input.cancelledBy,
+		});
+	}
 	void syncBookingChat(cancelled);
 	return cancelled;
 };
@@ -153,6 +160,7 @@ export const completeBookingTransition = async (input: CompleteInput): Promise<C
 		(booking.providerId as mongoose.Types.ObjectId).toString(),
 		completed,
 	);
+	await notifyBookingEvent(completed._id, "completed", { actorId: input.completedBy });
 	void syncBookingChat(completed);
 	return { completed, earning, releaseAt };
 };

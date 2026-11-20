@@ -13,6 +13,7 @@ import { COUNTERPARTY_SELECT, withCounterparties } from "./utils/counterparty.ut
 import { serializePayment } from "./utils/payment.utils";
 import { publicValidationErrors } from "../../middleware/sanitizeInput";
 import { emitEvent } from "../../lib/events";
+import { notifyBookingEvent } from "../../lib/chat/sendBookingEvent";
 import { bookingExpiryAt, checkLeadTime, checkServiceOffered, getSettings } from "../../lib/settings";
 import log from "../../lib/logger";
 
@@ -330,6 +331,7 @@ export const handleApproveStartJobRequest = async (req: Request, res: Response) 
 		);
 
 		await sendBookingStartApprovedNotification(booking.providerId.toString(), started);
+		await notifyBookingEvent(started._id, "started", { actorId: user._id as any });
 
 		res.status(200).json({ message: "Booking has been started." });
 	} catch (error) {

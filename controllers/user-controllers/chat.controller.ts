@@ -270,6 +270,12 @@ export const handleCreateReport = async (req: Request, res: Response) => {
 				if (error instanceof CometChatError && error.status === 404) return null;
 				throw error;
 			});
+			if (fetched?.bookingEvent) {
+				return res.status(400).json({
+					message: "That is an automatic booking update and cannot be reported.",
+					code: "message_not_reportable",
+				});
+			}
 			if (!reportedMessageMatches(fetched, me, reportedUid)) {
 				return res.status(400).json({
 					message: "That message was not sent to you by this person.",

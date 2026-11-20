@@ -112,13 +112,16 @@ export const addAudienceContact = async (input: {
 }): Promise<EmailResult> => {
 	const check = await emailAllowed("audience-contact", input.email, input.userId);
 	if (!check.allowed) return { status: "skipped", reason: check.reason };
+	// Resend 6 treats an empty audienceId as "no audience" and would create an unlisted contact; never do that.
+	const audienceId = process.env.RESEND_AUDIENCE_ID;
+	if (!audienceId) return { status: "failed", error: "RESEND_AUDIENCE_ID is not set" };
 	try {
 		const response = await resend().contacts.create({
 			email: input.email,
 			firstName: input.firstName,
 			lastName: input.lastName,
 			unsubscribed: false,
-			audienceId: process.env.RESEND_AUDIENCE_ID || "",
+			audienceId,
 		});
 		if (response.error) {
 			const message = String((response.error as { message?: unknown }).message ?? response.error);

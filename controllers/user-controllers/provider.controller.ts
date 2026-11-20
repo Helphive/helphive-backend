@@ -13,6 +13,7 @@ import {
 	generateAccountLink,
 	sendBookingAcceptedNotification,
 	sendBookingStartedNotification,
+	sendProviderOnlineNotification,
 } from "./utils/provider.utils";
 import { isValidObjectId, withDisplayStatus } from "./utils/booking.utils";
 import { scheduleBookingNoShowCheck } from "./utils/user.utils";
@@ -185,6 +186,8 @@ export const handleUpdateProviderAvailability = async (req: Request, res: Respon
 				},
 				req,
 			);
+			// Confirms they will hear about jobs by push; not awaited, so a slow push never delays the switch.
+			if (user.isProviderAvailable) void sendProviderOnlineNotification(String(user._id));
 		}
 		res.status(200).json({
 			isProviderAvailable: user.isProviderAvailable,

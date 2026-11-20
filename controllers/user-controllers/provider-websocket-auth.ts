@@ -9,6 +9,27 @@ export const WS_CLOSE = {
 	RATE_LIMITED: 4429,
 } as const;
 
+/** RFC 6455 normal closure: what the apps close with when the provider switches off or signs out. */
+export const WS_NORMAL_CLOSURE = 1000;
+
+/**
+ * Whether a closed socket means the provider went offline. Only a deliberate end does: the app closes with 1000 when
+ * the provider switches off or signs out, and this server closes with 4401 when the session is over. Anything else
+ * (the app went to the background, the phone lost its connection, the app was killed, this instance was replaced) is a
+ * lost connection and the provider stays available: new-job alerts are push notifications, which matter most exactly
+ * when the app is not open. Until 2026-11-20 every close marked the provider offline, so a phone was only available
+ * while its screen showed the app.
+ */
+export const closeMeansOffline = (code: number | null | undefined, closedByServerWith: number | null) =>
+	closedByServerWith === WS_CLOSE.UNAUTHORIZED || code === WS_CLOSE.UNAUTHORIZED || code === WS_NORMAL_CLOSURE;
+
+export interface SocketEnd {
+	/** The provider is to be marked unavailable (see closeMeansOffline). */
+	offline: boolean;
+	/** The close code the socket ended with, when there was one (1006 = the connection just dropped). */
+	code: number | null;
+}
+
 export const AUTH_TIMEOUT_MS = 10_000;
 export const MAX_MESSAGE_BYTES = 4096;
 
@@ -19,9 +40,7 @@ export interface AvailabilityUpdate {
 }
 
 export type ClientMessage =
-	| { kind: "auth"; token: string }
-	| { kind: "availability"; update: AvailabilityUpdate }
-	| { kind: "invalid" };
+	{ kind: "auth"; token: string } | { kind: "availability"; update: AvailabilityUpdate } | { kind: "invalid" };
 
 const isLatitude = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= -90 && v <= 90;
 const isLongitude = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= -180 && v <= 180;
@@ -63,7 +82,7 @@ export interface SocketLike {
 	send(data: string): void;
 	close(code?: number, reason?: string): void;
 	on(event: "message", listener: (data: unknown, isBinary?: boolean) => void): unknown;
-	on(event: "close", listener: () => void): unknown;
+	on(event: "close", listener: (code?: number) => void): unknown;
 }
 
 export type ProviderCheck = { ok: true; email: string; sessionId: string } | { ok: false };
@@ -74,8 +93,8 @@ export interface ProviderSocketDeps {
 	/** Whether the session behind the socket is still active and the user still an approved provider. */
 	stillAuthorized(email: string, sessionId: string): Promise<boolean>;
 	saveAvailability(email: string, update: AvailabilityUpdate): Promise<void>;
-	/** Called once when the socket closes after authenticating. */
-	onAuthenticatedClose(email: string): void;
+	/** Called once when the socket closes after authenticating, with whether that takes the provider offline. */
+	onAuthenticatedClose(email: string, end: SocketEnd): void;
 	onAuthenticated(email: string): void;
 	setTimer(fn: () => void, ms: number): unknown;
 	clearTimer(handle: unknown): void;
@@ -96,11 +115,19 @@ const send = (ws: SocketLike, message: Record<string, unknown>) => {
  * within AUTH_TIMEOUT_MS, or an invalid token, closes it with 4401. Returns a small handle for tests.
  */
 export const attachProviderSocket = (ws: SocketLike, deps: ProviderSocketDeps) => {
-	const state: { email: string | null; sessionId: string | null; closed: boolean; authenticating: boolean } = {
+	const state: {
+		email: string | null;
+		sessionId: string | null;
+		closed: boolean;
+		authenticating: boolean;
+		/** The code this server closed the socket with, when it did. */
+		closedWith: number | null;
+	} = {
 		email: null,
 		sessionId: null,
 		closed: false,
 		authenticating: false,
+		closedWith: null,
 	};
 	const messages = new FixedWindowCounter(RATE_LIMITS.wsMessagesPerSocket, deps.now);
 	const log = deps.log ?? (() => undefined);
@@ -108,6 +135,7 @@ export const attachProviderSocket = (ws: SocketLike, deps: ProviderSocketDeps) =
 	const close = (code: number, reason: string) => {
 		if (state.closed) return;
 		state.closed = true;
+		state.closedWith = code;
 		deps.clearTimer(timer);
 		send(ws, { type: "error", code, message: reason });
 		ws.close(code, reason);
@@ -176,10 +204,15 @@ export const attachProviderSocket = (ws: SocketLike, deps: ProviderSocketDeps) =
 		queue = queue.then(() => handle(raw, isBinary));
 	});
 
-	ws.on("close", () => {
+	ws.on("close", (code) => {
 		state.closed = true;
 		deps.clearTimer(timer);
-		if (state.email) deps.onAuthenticatedClose(state.email);
+		if (!state.email) return;
+		const closeCode = typeof code === "number" ? code : null;
+		deps.onAuthenticatedClose(state.email, {
+			offline: closeMeansOffline(closeCode, state.closedWith),
+			code: closeCode,
+		});
 	});
 
 	return {

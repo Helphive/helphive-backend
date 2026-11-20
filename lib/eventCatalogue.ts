@@ -83,8 +83,9 @@ export const EVENT_CATALOGUE = {
 		subjects: ["providerId"],
 		properties: {
 			available: "new value",
-			via: "http | websocket | disconnect | admin",
+			via: "http | websocket | disconnect | admin (disconnect: the app closed its socket on purpose, or the session ended; a lost connection changes nothing)",
 			jobTypes: "selected job type ids, when sent",
+			closeCode: "for disconnect: the websocket close code (1000 switched off or signed out, 4401 session over)",
 		},
 	},
 	"booking.created": {

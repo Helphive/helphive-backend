@@ -20,6 +20,7 @@ import {
 } from "../../middleware/rateLimitKeys";
 import { emitEvent } from "../../lib/events";
 import { isSuspended } from "../../lib/suspension";
+import { sendProviderOnlineNotification } from "./utils/provider.utils";
 import log from "../../lib/logger";
 
 export const PROVIDER_AVAILABILITY_PATH = "/provider-availability";
@@ -64,6 +65,7 @@ const recordAvailabilityChange = (
 	available: boolean,
 	via: "websocket" | "disconnect",
 	jobTypes?: number[],
+	closeCode?: number | null,
 ) =>
 	emitEvent({
 		type: "provider.availability_changed",
@@ -72,7 +74,12 @@ const recordAvailabilityChange = (
 			id: via === "disconnect" ? undefined : String(providerId),
 		},
 		subjects: { providerId: String(providerId) },
-		properties: { available, via, ...(jobTypes ? { jobTypes } : {}) },
+		properties: {
+			available,
+			via,
+			...(jobTypes ? { jobTypes } : {}),
+			...(closeCode !== undefined ? { closeCode } : {}),
+		},
 	});
 
 const saveAvailability = async (email: string, update: AvailabilityUpdate) => {
@@ -90,17 +97,21 @@ const saveAvailability = async (email: string, update: AvailabilityUpdate) => {
 	).exec();
 	if (previous && previous.isProviderAvailable !== update.isProviderAvailable) {
 		recordAvailabilityChange(previous._id, update.isProviderAvailable, "websocket", update.selectedJobs);
+		if (update.isProviderAvailable) void sendProviderOnlineNotification(String(previous._id));
 	}
 };
 
-const markOffline = async (email: string) => {
+/** The provider ended the socket on purpose (switched off, signed out) or the session is over: no longer available. */
+const markOffline = async (email: string, closeCode: number | null) => {
 	try {
 		const previous = await UserModel.findOneAndUpdate(
 			{ email },
 			{ $set: { isProviderAvailable: false } },
 			{ new: false, projection: { _id: 1, isProviderAvailable: 1 } },
 		).exec();
-		if (previous?.isProviderAvailable) recordAvailabilityChange(previous._id, false, "disconnect");
+		if (previous?.isProviderAvailable) {
+			recordAvailabilityChange(previous._id, false, "disconnect", undefined, closeCode);
+		}
 	} catch (error) {
 		log.error("Error updating provider availability on disconnect", error);
 	}
@@ -112,10 +123,13 @@ export const handleProviderAvailabilityWebSocket = (ws: WS) => {
 		stillAuthorized,
 		saveAvailability,
 		onAuthenticated: (email) => activeSockets.set(email, ws),
-		onAuthenticatedClose: (email) => {
+		onAuthenticatedClose: (email, end) => {
 			if (activeSockets.get(email) !== ws) return;
 			activeSockets.delete(email);
-			void markOffline(email);
+			// A lost connection (app in the background, no signal, app killed, this instance replaced) keeps the
+			// provider available: job alerts reach them as push notifications. Only a deliberate end switches them off.
+			if (end.offline) void markOffline(email, end.code);
+			else log.info("Provider availability socket lost; the provider stays available", { closeCode: end.code });
 		},
 		setTimer: (fn, ms) => setTimeout(fn, ms),
 		clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout),

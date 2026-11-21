@@ -16,7 +16,8 @@ import { handleHealthz, handleReadyz } from "./controllers/health.controller";
 import { warmEmailPolicy } from "./lib/emailPolicy";
 import log from "./lib/logger";
 import { errorHandler } from "./middleware/errorHandler";
-import { globalLimiter } from "./middleware/rateLimit";
+import { clientAttestLimiter, globalLimiter } from "./middleware/rateLimit";
+import { clientPassGuard } from "./middleware/clientPass";
 import { rejectOperatorKeys } from "./middleware/sanitizeInput";
 import { appLinkWebFallback, buildAssetLinks, parseAppFlavor, stripeOnboardingRedirect } from "./lib/appIdentity";
 import { observeRequests } from "./lib/observability/runtime";
@@ -29,6 +30,7 @@ import emailRoute from "./routes/email.route";
 import webhookRoute from "./routes/webhook-routes/webhook.route";
 import publicRoute from "./routes/public.route";
 import clientErrorsRoute from "./routes/clientErrors.route";
+import clientAttestRoute, { attestBodyError } from "./routes/clientAttest.route";
 import { createProviderAvailabilityUpgradeHandler } from "./controllers/user-controllers/provider-websocket";
 
 if (
@@ -125,10 +127,14 @@ app.use("/webhook", webhookRoute);
 app.use("/client-errors", clientErrorsRoute);
 
 app.use(express.json({ limit: "100kb" }));
+app.use("/client-attest", attestBodyError);
 app.use(cookieParser());
 // Body parsers resume the chain from stream callbacks; re-enter the request context for everything after them.
 app.use(bindRequestContext);
 app.use(rejectOperatorKeys);
+
+// Client attestation: POST /client-attest hands out the pass; clientPassGuard checks it on the API prefixes below.
+app.use("/client-attest", clientAttestLimiter, clientAttestRoute);
 
 // Android App Links for both application ids (lib/appIdentity.ts). Served from code so the two ids and their
 // fingerprints live in one place; Google's verifier needs JSON with a 200 and no redirect.
@@ -151,6 +157,8 @@ app.get("/", (req: Request, res: Response) => {
 	res.sendFile(path.join(__dirname, "views", "Home", "home.html"));
 });
 
+// Client pass (X-Client-Pass) check for the public API prefixes (mode in CLIENT_ATTEST_MODE; /admin is not covered).
+app.use(["/auth", "/email", "/public"], clientPassGuard);
 app.use("/auth", authRoute);
 app.use("/admin", adminRoute);
 app.use("/email", emailRoute);

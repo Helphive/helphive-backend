@@ -9,7 +9,7 @@ export const ANDROID_APP_ID = "com.himaiz.helphive.app";
 export const LEGACY_ANDROID_APP_ID = "com.helphivenow.app";
 
 /** Upload/app signing key shared by both ids (owner-provided). */
-const SIGNING_KEY_SHA256 =
+export const SIGNING_KEY_SHA256 =
 	"D4:9A:E6:C7:71:64:FB:1A:E9:3C:C4:AE:C4:7D:AA:F7:89:5D:78:91:E2:4A:D5:B3:F4:98:5F:9D:D0:B4:7C:E5";
 /** Google Play app signing key of the old listing (closed testing), as published before this change. */
 const LEGACY_PLAY_SIGNING_SHA256 =

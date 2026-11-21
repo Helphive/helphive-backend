@@ -17,6 +17,7 @@ const baseOptions: CorsOptions = {
 		"X-App-Platform",
 		"X-App-Version",
 		"X-Device-Id",
+		"X-Client-Pass",
 		"X-App-Id",
 		"X-Request-Id",
 	],

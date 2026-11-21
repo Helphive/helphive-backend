@@ -456,3 +456,10 @@ export const webhookLimiter = (name: string, rejectedStatus: number) =>
 		failuresOnly: true,
 		isFailure: (_req, res) => res.statusCode === rejectedStatus,
 	});
+
+export const clientAttestLimiter = createLimiter({
+	name: "client-attest-ip",
+	rule: RATE_LIMITS.clientAttestPerIp,
+	kind: "shared",
+	key: byIp,
+});

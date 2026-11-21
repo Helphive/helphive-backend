@@ -30,6 +30,8 @@ export const RATE_LIMITS = {
 	emailRequestPerAddress: { windowMs: HOUR, limit: 5 },
 	resetPasswordPerIp: { windowMs: 15 * MINUTE, limit: 10 },
 	verifyEmailPerIp: { windowMs: 15 * MINUTE, limit: 20 },
+	// POST /client-attest: each call may cost a Google API request, so it is capped per address.
+	clientAttestPerIp: { windowMs: 15 * MINUTE, limit: 30 },
 	// A session refreshes about every 10 minutes; 30 in 15 minutes leaves room for retries and parallel tabs.
 	refreshPerSession: { windowMs: 15 * MINUTE, limit: 30 },
 	refreshPerIp: { windowMs: 15 * MINUTE, limit: 300 },

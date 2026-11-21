@@ -69,7 +69,7 @@ export const evaluateIntegrityPayload = (
 };
 
 // Production web hosts only; localhost when NODE_ENV is explicitly "development". Preview channels are not accepted.
-const WEB_HOSTS = new Set(["helphive.himaiz.com", "helphivenow.web.app", "helphivenow.firebaseapp.com"]);
+const WEB_HOSTS = new Set(["helphive.himaiz.com"]);
 
 export const isAllowedWebHostname = (hostname: unknown) => {
 	if (typeof hostname !== "string") return false;

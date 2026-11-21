@@ -147,7 +147,8 @@ test("recaptcha: good assessment, score threshold boundary; previews never, loca
 	process.env.NODE_ENV = "production";
 	assert.equal(recaptchaReason(goodAssessment()), "ok");
 	assert.equal(recaptchaReason(goodAssessment("helphive.himaiz.com", 0.5)), "ok");
-	assert.equal(recaptchaReason(goodAssessment("HelpHiveNow.web.app")), "ok");
+	assert.equal(recaptchaReason(goodAssessment("HelpHive.HiMaiz.com")), "ok");
+	assert.equal(recaptchaReason(goodAssessment("helphivenow.web.app")), "recaptcha_hostname", "retired Firebase site");
 	assert.equal(recaptchaReason(goodAssessment("helphivenow--pr-42-abc123.web.app")), "recaptcha_hostname");
 	assert.equal(recaptchaReason(goodAssessment("localhost")), "recaptcha_hostname");
 	process.env.NODE_ENV = "development";
@@ -518,7 +519,7 @@ test("route: CLIENT_PASS_TTL_WEB_SEC sets the web pass lifetime", async () => {
 	);
 	try {
 		await withEnv({ ...ENV, CLIENT_PASS_TTL_WEB_SEC: "120" }, async () => {
-			mock.state.assess = async () => goodAssessment("helphivenow.firebaseapp.com");
+			mock.state.assess = async () => goodAssessment("helphive.himaiz.com");
 			const result = await attest(app.base, { platform: "web", deviceId: DEVICE, recaptchaToken: "tok" });
 			assert.equal(result.status, 200);
 			assert.equal(result.body.expiresAt, (Math.floor(NOW / 1000) + 120) * 1000);

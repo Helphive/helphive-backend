@@ -1,4 +1,5 @@
-// Browser origins allowed to call the API (CORS). Deployed environments allow only the production sites; local and LAN
+// Browser origins allowed to call the API (CORS). Deployed environments allow only the production sites (web and admin
+// are Cloudflare Workers static assets; the old Firebase Hosting sites are disabled); local and LAN
 // origins are added only when NODE_ENV is explicitly "development" (local .env). Firebase preview channels are not
 // allowed: a PR preview that needs the live API gets a temporary CORS_ALLOWED_ORIGINS entry on Cloud Run.
 // Requests without an Origin (the mobile app, webhooks, Cloud Tasks, server-to-server) are not browser calls and pass.
@@ -13,11 +14,6 @@ export const PRODUCTION_ORIGINS: readonly string[] = [
 	"https://helphive.himaiz.com",
 	"https://admin.helphive.himaiz.com",
 	"https://api.helphive.himaiz.com",
-	// Firebase Hosting's own domains for the same production sites (web: helphivenow, admin: helphive).
-	"https://helphivenow.web.app",
-	"https://helphivenow.firebaseapp.com",
-	"https://helphive.web.app",
-	"https://helphive.firebaseapp.com",
 ];
 
 export const DEVELOPMENT_ORIGINS: readonly RegExp[] = [

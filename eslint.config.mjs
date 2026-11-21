@@ -11,7 +11,7 @@ export default [
 	includeIgnoreFile(eslintIgnorePath),
 	...tseslint.configs.recommended,
 	{
-		ignores: ["logs/**/*", "dist/**/*", "eslint.config.mjs"],
+		ignores: ["logs/**/*", "dist/**/*", "edge/**/*", "eslint.config.mjs"],
 		plugins: {
 			"@typescript-eslint": tseslint.plugin,
 		},
@@ -28,6 +28,6 @@ export default [
 	{
 		files: ["**/*.[js,jsx]"],
 		...tseslint.configs.disableTypeChecked,
-		ignores: ["logs/**/*", "dist/**/*", "eslint.config.mjs"],
+		ignores: ["logs/**/*", "dist/**/*", "edge/**/*", "eslint.config.mjs"],
 	},
 ];

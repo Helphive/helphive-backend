@@ -1,0 +1,15 @@
+# Deploy: from edge/api, with CLOUDFLARE_API_TOKEN set (secret store `cloudflare-api-token`, VPN only): npx wrangler@4 deploy
+# The secret is set once with: npx wrangler@4 secret put ORIGIN_AUTH (same value as ORIGIN_AUTH in helphive-secrets)
+name = "helphive-api-edge"
+main = "index.js"
+compatibility_date = "2026-11-01"
+account_id = "803b01a6e3e53ef41f175e2a54e51372"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "api.helphive.himaiz.com", custom_domain = true }]
+
+[vars]
+ORIGIN = "https://helphive-backend-sjzzjsey3a-uc.a.run.app"
+
+[observability]
+enabled = true

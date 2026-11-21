@@ -1,9 +1,7 @@
-// Loads the secrets bundle before anything reads process.env: on Cloud Run, Secret Manager secret `helphive-backend-env`
-// is mounted as a dotenv file at /secrets/app.env (SECRETS_FILE overrides the path). Plain env vars keep priority.
-// Locally the file is absent and index.ts loads .env as before. Imported first in index.ts.
-import fs from "fs";
-import dotenv from "dotenv";
-
-export const SECRETS_FILE = process.env.SECRETS_FILE || "/secrets/app.env";
-
-if (fs.existsSync(SECRETS_FILE)) dotenv.config({ path: SECRETS_FILE });
+// Secrets: on Cloud Run, Secret Manager secret `helphive-secrets` (one JSON object of strings, only its latest version
+// kept) arrives as the env var APP_SECRETS. It is unpacked here, before any other module reads process.env, and then
+// removed. Locally APP_SECRETS is unset and index.ts loads .env as before. Imported first in index.ts.
+if (process.env.APP_SECRETS) {
+	Object.assign(process.env, JSON.parse(process.env.APP_SECRETS));
+	delete process.env.APP_SECRETS;
+}

@@ -142,12 +142,18 @@ const recaptchaReason = (assessment: unknown, min = 0.5) => {
 	return verdict.ok ? "ok" : verdict.reason;
 };
 
-test("recaptcha: good assessment, score threshold boundary, preview channel host", () => {
+test("recaptcha: good assessment, score threshold boundary; previews never, localhost only in development", () => {
+	const nodeEnv = process.env.NODE_ENV;
+	process.env.NODE_ENV = "production";
 	assert.equal(recaptchaReason(goodAssessment()), "ok");
 	assert.equal(recaptchaReason(goodAssessment("helphive.himaiz.com", 0.5)), "ok");
-	assert.equal(recaptchaReason(goodAssessment("helphivenow--pr-42-abc123.web.app")), "ok");
 	assert.equal(recaptchaReason(goodAssessment("HelpHiveNow.web.app")), "ok");
+	assert.equal(recaptchaReason(goodAssessment("helphivenow--pr-42-abc123.web.app")), "recaptcha_hostname");
+	assert.equal(recaptchaReason(goodAssessment("localhost")), "recaptcha_hostname");
+	process.env.NODE_ENV = "development";
 	assert.equal(recaptchaReason(goodAssessment("localhost")), "ok");
+	assert.equal(recaptchaReason(goodAssessment("helphivenow--pr-42-abc123.web.app")), "recaptcha_hostname");
+	process.env.NODE_ENV = nodeEnv;
 });
 
 test("recaptcha: invalid token, wrong action, low or missing score", () => {
@@ -512,7 +518,7 @@ test("route: CLIENT_PASS_TTL_WEB_SEC sets the web pass lifetime", async () => {
 	);
 	try {
 		await withEnv({ ...ENV, CLIENT_PASS_TTL_WEB_SEC: "120" }, async () => {
-			mock.state.assess = async () => goodAssessment("helphivenow--preview.web.app");
+			mock.state.assess = async () => goodAssessment("helphivenow.firebaseapp.com");
 			const result = await attest(app.base, { platform: "web", deviceId: DEVICE, recaptchaToken: "tok" });
 			assert.equal(result.status, 200);
 			assert.equal(result.body.expiresAt, (Math.floor(NOW / 1000) + 120) * 1000);

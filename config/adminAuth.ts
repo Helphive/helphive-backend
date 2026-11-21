@@ -2,6 +2,7 @@
 // that the current console uses without refreshing.
 import { durationFromEnv } from "../lib/duration";
 import { keyFromConfig } from "../lib/secretBox";
+import { isDevelopment } from "./allowedOrigins";
 
 const warn = (message: string) => process.stderr.write(`${JSON.stringify({ severity: "WARNING", message })}\n`);
 
@@ -40,8 +41,7 @@ export const adminRefreshKey = () =>
 	keyFromConfig(process.env.ADMIN_REFRESH_TOKEN_SECRET || `refresh:${adminTokenSecret()}`, "helphive-admin-refresh");
 
 const DEFAULT_ADMIN_ORIGINS = ["https://admin.helphive.himaiz.com"];
-// Console development against a local or live API. The refresh cookie never reaches these from the live API (they
-// are a different site, and the cookie is SameSite=Strict), so they can only use the access token.
+// Console development against a local API, only when NODE_ENV is explicitly "development"; deployed APIs never allow it.
 const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
 
 /** ADMIN_CONSOLE_ORIGINS (comma separated) replaces the default admin origin list. */
@@ -55,4 +55,4 @@ export const adminConsoleOrigins = (): string[] => {
 
 /** Whether a browser origin may call /admin routes (with credentials). No origin (server to server) is allowed. */
 export const isAdminOrigin = (origin: string | undefined) =>
-	!origin || adminConsoleOrigins().includes(origin) || LOCAL_ORIGIN.test(origin);
+	!origin || adminConsoleOrigins().includes(origin) || (isDevelopment() && LOCAL_ORIGIN.test(origin));

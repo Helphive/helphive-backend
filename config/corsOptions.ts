@@ -31,7 +31,7 @@ export const isAdminPath = (path: string) => path === "/admin" || path.startsWit
 
 /**
  * The app-wide allow-list for every route, except /admin: only the admin console's origins (ADMIN_CONSOLE_ORIGINS,
- * default https://admin.helphive.himaiz.com, plus localhost for console development) may call it from a browser,
+ * default https://admin.helphive.himaiz.com, plus localhost when NODE_ENV=development) may call it from a browser,
  * with credentials, because the admin refresh cookie rides on those calls.
  */
 export const originAllowedFor = (path: string, origin: string | undefined) =>

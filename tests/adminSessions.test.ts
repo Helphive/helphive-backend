@@ -148,17 +148,30 @@ test("refresh cookie: httpOnly, Secure, SameSite=Strict, scoped to /admin", () =
 	assert.equal(fields.mustChangePassword, false);
 });
 
-test("CORS: /admin only from the console's origins (and localhost for development); other routes unchanged", () => {
+test("CORS: /admin only from the console's origins; localhost and LAN only when NODE_ENV=development", () => {
 	delete process.env.ADMIN_CONSOLE_ORIGINS;
+	const nodeEnv = process.env.NODE_ENV;
+	process.env.NODE_ENV = "production";
 	assert.equal(cors.originAllowedFor("/admin/refresh", "https://admin.helphive.himaiz.com"), true);
-	assert.equal(cors.originAllowedFor("/admin/refresh", "http://localhost:5174"), true);
+	assert.equal(cors.originAllowedFor("/admin/refresh", "http://localhost:5174"), false, "localhost in production");
 	assert.equal(cors.originAllowedFor("/admin/refresh", "https://helphive.himaiz.com"), false, "the web app");
 	assert.equal(cors.originAllowedFor("/admin/login", "http://192.168.1.20:5173"), false, "LAN origins");
 	assert.equal(cors.originAllowedFor("/admin/login", "https://evil.example"), false);
 	assert.equal(cors.originAllowedFor("/admin", undefined), true, "no Origin (server to server)");
 	assert.equal(cors.originAllowedFor("/administrator", "https://helphive.himaiz.com"), true, "not an admin path");
 	assert.equal(cors.originAllowedFor("/auth/login", "https://helphive.himaiz.com"), true);
-	assert.equal(cors.originAllowedFor("/auth/login", "http://192.168.1.20:5173"), true);
+	assert.equal(cors.originAllowedFor("/auth/login", "http://192.168.1.20:5173"), false, "LAN in production");
+	assert.equal(cors.originAllowedFor("/auth/login", "http://localhost:5173"), false, "localhost in production");
+	assert.equal(
+		cors.originAllowedFor("/auth/login", "https://helphivenow--pr12-x-abc.web.app"),
+		false,
+		"preview channel",
+	);
+	assert.equal(cors.originAllowedFor("/auth/login", undefined), true, "no Origin (mobile app, webhooks)");
+	process.env.NODE_ENV = "development";
+	assert.equal(cors.originAllowedFor("/admin/refresh", "http://localhost:5174"), true, "localhost in development");
+	assert.equal(cors.originAllowedFor("/auth/login", "http://192.168.1.20:5173"), true, "LAN in development");
+	process.env.NODE_ENV = nodeEnv;
 	assert.equal(cors.originAllowedFor("/auth/login", "https://evil.example"), false);
 	process.env.ADMIN_CONSOLE_ORIGINS = "https://console.example.com";
 	assert.equal(cors.originAllowedFor("/admin/login", "https://console.example.com"), true);

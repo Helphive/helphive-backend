@@ -2,6 +2,7 @@
 import crypto from "crypto";
 import { ANDROID_APP_ID, SIGNING_KEY_SHA256 } from "../appIdentity";
 import { ATTEST_ACTION } from "./config";
+import { isDevelopment } from "../../config/allowedOrigins";
 
 export type Verdict =
 	{ ok: true; summary: Record<string, unknown> } | { ok: false; reason: string; summary: Record<string, unknown> };
@@ -67,13 +68,13 @@ export const evaluateIntegrityPayload = (
 	return { ok: true, summary };
 };
 
-const WEB_HOSTS = new Set(["helphive.himaiz.com", "helphivenow.web.app", "helphivenow.firebaseapp.com", "localhost"]);
-const PREVIEW_HOST = /^helphivenow--[a-z0-9-]+\.web\.app$/;
+// Production web hosts only; localhost when NODE_ENV is explicitly "development". Preview channels are not accepted.
+const WEB_HOSTS = new Set(["helphive.himaiz.com", "helphivenow.web.app", "helphivenow.firebaseapp.com"]);
 
 export const isAllowedWebHostname = (hostname: unknown) => {
 	if (typeof hostname !== "string") return false;
 	const host = hostname.toLowerCase();
-	return WEB_HOSTS.has(host) || PREVIEW_HOST.test(host);
+	return WEB_HOSTS.has(host) || (isDevelopment() && host === "localhost");
 };
 
 /** Judges a reCAPTCHA Enterprise assessment response for the web client. */

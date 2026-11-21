@@ -22,6 +22,7 @@ import { emitEvent } from "../../lib/events";
 import { isSuspended } from "../../lib/suspension";
 import { sendProviderOnlineNotification } from "./utils/provider.utils";
 import log from "../../lib/logger";
+import { checkOrigin } from "../../lib/originAuth";
 
 export const PROVIDER_AVAILABILITY_PATH = "/provider-availability";
 
@@ -117,7 +118,14 @@ const markOffline = async (email: string, closeCode: number | null) => {
 	}
 };
 
+// Cloudflare closes a WebSocket after 100 s without traffic; a ping every 30 s keeps it open (clients answer pongs).
+const KEEPALIVE_MS = 30_000;
+
 export const handleProviderAvailabilityWebSocket = (ws: WS) => {
+	const keepAlive = setInterval(() => {
+		if (ws.readyState === ws.OPEN) ws.ping();
+	}, KEEPALIVE_MS);
+	ws.on("close", () => clearInterval(keepAlive));
 	attachProviderSocket(ws, {
 		authenticate,
 		stillAuthorized,
@@ -167,7 +175,17 @@ export const createProviderAvailabilityUpgradeHandler = (trustProxyHops: number)
 		}
 		if (pathname !== PROVIDER_AVAILABILITY_PATH) return rejectUpgrade(socket, 404, "Not Found", "Not found.");
 
-		const ip = clientIpFrom(req.socket.remoteAddress, req.headers["x-forwarded-for"], trustProxyHops);
+		// Through the Cloudflare Worker the visitor's address arrives as X-Client-IP (trusted only with the secret);
+		// a direct upgrade without the secret is refused once ORIGIN_AUTH_MODE=enforce (lib/originAuth.ts).
+		const origin = checkOrigin(req.headers);
+		if (origin.status === "direct") {
+			if (origin.enforce) return rejectUpgrade(socket, 403, "Forbidden", "Forbidden");
+			log.warn("Origin auth missing (log only)", { method: "GET", path: PROVIDER_AVAILABILITY_PATH });
+		}
+		const ip =
+			origin.status === "worker" && origin.clientIp
+				? origin.clientIp
+				: clientIpFrom(req.socket.remoteAddress, req.headers["x-forwarded-for"], trustProxyHops);
 		const attempt = connections.hit(ipKey(ip));
 		if (!attempt.allowed) {
 			return rejectUpgrade(socket, 429, "Too Many Requests", RATE_LIMIT_MESSAGE, {

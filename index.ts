@@ -22,6 +22,7 @@ import { clientPassGuard } from "./middleware/clientPass";
 import { rejectOperatorKeys } from "./middleware/sanitizeInput";
 import { appLinkWebFallback, buildAssetLinks, parseAppFlavor, stripeOnboardingRedirect } from "./lib/appIdentity";
 import { observeRequests } from "./lib/observability/runtime";
+import { originAuth } from "./lib/originAuth";
 
 dotenv.config();
 
@@ -75,6 +76,9 @@ const PORT = process.env.PORT || 8080;
 
 app.set("trust proxy", trustProxyHops);
 app.disable("x-powered-by");
+// Before everything else: requests must come through the Cloudflare Worker (lib/originAuth.ts), which also supplies
+// the visitor's IP that the rate limiters, risk rules, reCAPTCHA and logs read from req.ip.
+app.use(originAuth);
 
 const server = app.listen(PORT, () => {
 	log.info(`Server is running at ${SERVER_BASE_URL}`);

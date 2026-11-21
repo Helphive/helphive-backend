@@ -19,7 +19,7 @@ import {
 import { sendEmail, setEmailDependencies } from "../lib/email";
 import { setEventWriter } from "../lib/events";
 import { setLogSink } from "../lib/logger";
-import { DEMO_ACCOUNT_EMAILS } from "../config/demoAccounts";
+import { DEMO_ACCOUNT_EMAILS, currentDemoAccountEmail } from "../config/demoAccounts";
 
 setEventWriter(async () => undefined);
 
@@ -64,12 +64,22 @@ test("the disposable list is loaded once into Sets (exact and wildcard)", () => 
 });
 
 test("demo accounts are never emailed, whatever the case or spacing, even if their domain is allow-listed", () => {
-	assert.equal(reason("user@helphivenow.com"), "demo_account");
-	assert.equal(reason("  Provider@HelpHiveNow.com "), "demo_account");
+	assert.equal(reason("user@helphive.himaiz.com"), "demo_account");
+	assert.equal(reason("  Provider@HelpHive.Himaiz.com "), "demo_account");
 	assert.equal(
-		reason("provider@helphivenow.com", config({ allowedDomains: new Set(["helphivenow.com"]) })),
+		reason("provider@helphive.himaiz.com", config({ allowedDomains: new Set(["helphive.himaiz.com"]) })),
 		"demo_account",
 	);
+	// Their addresses before 2026-11-21 stay blocked too.
+	assert.equal(reason("user@helphivenow.com"), "demo_account");
+	assert.equal(reason("Provider@HelpHiveNow.com"), "demo_account");
+});
+
+test("a demo account's old address resolves to its current one; other addresses are unchanged", () => {
+	assert.equal(currentDemoAccountEmail("user@helphivenow.com"), "user@helphive.himaiz.com");
+	assert.equal(currentDemoAccountEmail(" Provider@HelphiveNow.com "), "provider@helphive.himaiz.com");
+	assert.equal(currentDemoAccountEmail("provider@helphive.himaiz.com"), "provider@helphive.himaiz.com");
+	assert.equal(currentDemoAccountEmail("Jane@Gmail.com"), "Jane@Gmail.com");
 });
 
 test("invalid addresses are blocked", () => {
@@ -261,7 +271,8 @@ test("sign-up decision: blocked addresses get 400 with the agreed message; allow
 	const ok = await call({ email: "  New.Person@Gmail.com " });
 	assert.equal(ok.passed, true);
 	assert.equal(ok.res.statusCode, 200);
-	assert.equal((await call({ email: "provider@helphivenow.com" })).res.statusCode, 400, "demo address");
+	assert.equal((await call({ email: "provider@helphive.himaiz.com" })).res.statusCode, 400, "demo address");
+	assert.equal((await call({ email: "provider@helphivenow.com" })).res.statusCode, 400, "old demo address");
 });
 
 test("sendEmail skips blocked recipients without calling the provider, and reports provider failures without throwing", async () => {
@@ -281,7 +292,7 @@ test("sendEmail skips blocked recipients without calling the provider, and repor
 		} as any,
 	});
 	const base = { template: "refund" as const, from: "Helphive <support@x.com>", subject: "s", react: null as any };
-	assert.deepEqual(await sendEmail({ ...base, to: "user@helphivenow.com" }), {
+	assert.deepEqual(await sendEmail({ ...base, to: "user@helphive.himaiz.com" }), {
 		status: "skipped",
 		reason: "demo_account",
 	});

@@ -423,7 +423,7 @@ test("global search results: names, emails and echoed query text masked; types, 
 });
 
 test("the shared demo customer's records stay readable in the new shapes too", () => {
-	const demo = { ...customerDoc, email: "user@helphivenow.com", lastName: "User", city: "london" };
+	const demo = { ...customerDoc, email: "user@helphive.himaiz.com", lastName: "User", city: "london" };
 	const out = mask({ items: [userListItem(demo)] });
 	assert.equal(out.items[0].lastName, "User");
 	assert.equal(out.items[0].city, "london");

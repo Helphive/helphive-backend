@@ -2,6 +2,7 @@
 import UserModel from "../../../dal/models/user.model";
 import { SEARCH_COLLATION } from "../../../lib/adminSearch";
 import { canonicalEmail, normaliseEmail } from "../../../lib/emailAddress";
+import { currentDemoAccountEmail } from "../../../config/demoAccounts";
 
 type UserDoc = InstanceType<typeof UserModel>;
 
@@ -10,8 +11,10 @@ type UserDoc = InstanceType<typeof UserModel>;
  * otherwise a case-insensitive match on the email_ci index (same collation), used only when it is unambiguous, so
  * two old accounts that differ only by case never sign in to each other.
  */
-export const findUserByEmail = async (email: unknown): Promise<UserDoc | null> => {
-	if (typeof email !== "string" || !email) return null;
+export const findUserByEmail = async (typed: unknown): Promise<UserDoc | null> => {
+	if (typeof typed !== "string" || !typed) return null;
+	// Old app builds and older sessions still use a demo account's previous address.
+	const email = currentDemoAccountEmail(typed);
 	const exact = await UserModel.findOne({ email }).exec();
 	if (exact) return exact;
 	const normalised = normaliseEmail(email);

@@ -101,7 +101,7 @@ test("never contacted: suspended accounts and the shared demo accounts; email on
 	assert.equal(recipientExclusion(person()), null);
 	assert.equal(recipientExclusion(person({ suspended: true })), "suspended");
 	assert.equal(recipientExclusion(person({ email: "User@HelpHiveNow.com" })), "demo_account");
-	assert.equal(recipientExclusion(person({ email: "provider@helphivenow.com" })), "demo_account");
+	assert.equal(recipientExclusion(person({ email: "provider@helphive.himaiz.com" })), "demo_account");
 	assert.equal(emailExclusion(person({ isEmailVerified: false })), "email_not_verified");
 	assert.equal(emailExclusion(person({ suspended: true, isEmailVerified: false })), "suspended");
 	assert.equal(emailExclusion(person()), null);

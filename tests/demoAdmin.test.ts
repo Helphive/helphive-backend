@@ -177,7 +177,7 @@ test("masking: audit entries and tokens", () => {
 test("masking: the shared demo customer and provider stay readable, except their documents", () => {
 	const out = mask([
 		{
-			email: "provider@helphivenow.com",
+			email: "provider@helphive.himaiz.com",
 			lastName: "Provider",
 			phone: "+1 555 0100",
 			street: "1 demo road",
@@ -187,12 +187,12 @@ test("masking: the shared demo customer and provider stay readable, except their
 		{
 			booking: {
 				address: "2 real street",
-				userId: { email: "user@helphivenow.com", lastName: "User", phone: "+1 555 0101" },
+				userId: { email: "user@helphive.himaiz.com", lastName: "User", phone: "+1 555 0101" },
 			},
 		},
 	]);
 	assert.deepEqual(out[0], {
-		email: "provider@helphivenow.com",
+		email: "provider@helphive.himaiz.com",
 		lastName: "Provider",
 		phone: "+1 555 0100",
 		street: "1 demo road",
@@ -200,7 +200,11 @@ test("masking: the shared demo customer and provider stay readable, except their
 	});
 	assert.deepEqual(out[1], { email: "s•••@•••.com", lastName: "R.", phone: "•••99" });
 	assert.equal(out[2].booking.address, MASK, "the booking itself is not the demo account's record");
-	assert.deepEqual(out[2].booking.userId, { email: "user@helphivenow.com", lastName: "User", phone: "+1 555 0101" });
+	assert.deepEqual(out[2].booking.userId, {
+		email: "user@helphive.himaiz.com",
+		lastName: "User",
+		phone: "+1 555 0101",
+	});
 });
 
 test("masking keeps the shape res.json would send (ObjectIds and Dates serialised, strings and nulls pass)", () => {

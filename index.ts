@@ -1,3 +1,4 @@
+import "./config/loadSecrets";
 import express, { Request, Response } from "express";
 import path from "path";
 import dotenv from "dotenv";

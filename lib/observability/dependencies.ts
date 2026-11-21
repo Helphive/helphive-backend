@@ -113,7 +113,7 @@ export const DEPENDENCIES: { name: string; label: string; enabled: () => boolean
 	{
 		name: "cloud-tasks",
 		label: "Cloud Tasks queue",
-		enabled: () => configured("GOOGLE_CLOUD_SERVICE_ACCOUNT_PRIVATE_KEY"),
+		enabled: () => true,
 		probe: async () => {
 			// eslint-disable-next-line @typescript-eslint/no-require-imports
 			const { googleCloudTasks } = require("../../controllers/service-accounts/cloud-tasks");

@@ -41,7 +41,6 @@ if (
 	!process.env.ACCESS_TOKEN_SECRET ||
 	!process.env.REFRESH_TOKEN_SECRET ||
 	!process.env.EMAIL_VERIFICATION_SECRET ||
-	!process.env.GOOGLE_CLOUD_SERVICE_ACCOUNT_PRIVATE_KEY ||
 	!process.env.RESEND_API_KEY ||
 	!process.env.RESEND_AUDIENCE_ID ||
 	!process.env.STRIPE_SECRET_KEY ||

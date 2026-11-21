@@ -10,7 +10,6 @@ type Config = {
 		USER_PROFILES_BUCKET: string;
 		PUBLIC_BUCKET: string;
 		GOOGLE_CLOUD_PROJECT_ID: string;
-		GOOGLE_CLOUD_SERVICE_ACCOUNT_CLIENT_EMAIL: string;
 		GOOGLE_CLOUD_TASKS_QUEUE_PATH: string;
 		COMET_CHAT_BASE_URL: string;
 	};
@@ -32,7 +31,6 @@ const config: Config = {
 		USER_PROFILES_BUCKET: "helphive-users",
 		PUBLIC_BUCKET: "helphive-public",
 		GOOGLE_CLOUD_PROJECT_ID: "helphive",
-		GOOGLE_CLOUD_SERVICE_ACCOUNT_CLIENT_EMAIL: "helphive-backend-server@helphive.iam.gserviceaccount.com",
 		GOOGLE_CLOUD_TASKS_QUEUE_PATH: "projects/helphive/locations/us-central1/queues/helphive-app-queue",
 		COMET_CHAT_BASE_URL: "https://26925431c1f0b1aa.api-eu.cometchat.io/v3",
 	},
@@ -46,7 +44,6 @@ export const {
 	USER_PROFILES_BUCKET,
 	PUBLIC_BUCKET,
 	GOOGLE_CLOUD_PROJECT_ID,
-	GOOGLE_CLOUD_SERVICE_ACCOUNT_CLIENT_EMAIL,
 	GOOGLE_CLOUD_TASKS_QUEUE_PATH,
 	COMET_CHAT_BASE_URL,
 } = config.common;

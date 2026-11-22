@@ -6,4 +6,5 @@ dispatch.yaml
 .gitignore
 yarn-error.log
 yarn.lock
-# package-lock.jsonedge
+# package-lock.json
+edge

@@ -33,8 +33,11 @@ All hostnames are in the shared Cloudflare zone `himaiz.com`.
 - **Cloud Run** `helphive-backend` (`us-central1`): at most 2 instances, 4 vCPU and 4 GiB each, startup CPU boost.
   A startup probe on `/readyz` (every second, up to 120 tries) means a new revision only takes traffic once its
   database answers. Ingress is open, but every request without the edge's secret is refused (see Cloudflare below).
-- **Runtime identity:** the default compute service account, through Application Default Credentials. There are no
-  service-account keys. The account may create tokens for itself, which lets it sign Cloud Storage URLs.
+- **Runtime identity:** the default compute service account, through Application Default Credentials, with no key.
+  The account may create tokens for itself, which lets it sign Cloud Storage URLs.
+- **Service accounts:** besides the runtime account (and App Engine's default one), only `firebase-adminsdk-…`
+  remains. It holds the project's only service-account key, which OneSignal uses to send Android pushes through
+  Firebase Cloud Messaging.
 - **Artifact Registry** repo `cloud-run-source-deploy` (`us-central1`): holds the image only during a deploy. A cleanup
   policy deletes images older than a day, and the deploy pipeline deletes them right after deploying. Cloud Run keeps
   its own copy of the running image.
@@ -148,6 +151,7 @@ survives deploys. Its plain variable `ORIGIN` (the Cloud Run URL) is in `edge/ap
 - **Cloudflare:** the Worker secret `ORIGIN_AUTH` on `helphive-api-edge` (same value as in `helphive-secrets`). The
   website and admin Workers hold only public build variables.
 - **GitHub:** no live workflow reads an Actions secret.
+- **OneSignal's FCM key:** the `firebase-adminsdk-…` service-account key, uploaded to the OneSignal dashboard.
 - **Android signing key:** kept by the maintainer outside every repo.
 
 ## Client attestation (bot protection)

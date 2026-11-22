@@ -1,4 +1,5 @@
-# Deploy: from edge/api, with CLOUDFLARE_API_TOKEN set (secret store `cloudflare-api-token`, VPN only): npx wrangler@4 deploy
+# Deployed by Cloudflare Workers Builds on every push to main that changes edge/api (root /edge/api, no build step,
+# build variable SKIP_DEPENDENCY_INSTALL=1, deploy npx -y wrangler@4 deploy). Backend Cloud Build ignores edge/**.
 # The secret is set once with: npx wrangler@4 secret put ORIGIN_AUTH (same value as ORIGIN_AUTH in helphive-secrets)
 name = "helphive-api-edge"
 main = "index.js"

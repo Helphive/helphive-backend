@@ -22,7 +22,7 @@ import { clientPassGuard } from "./middleware/clientPass";
 import { rejectOperatorKeys } from "./middleware/sanitizeInput";
 import { appLinkWebFallback, buildAssetLinks, parseAppFlavor, stripeOnboardingRedirect } from "./lib/appIdentity";
 import { observeRequests } from "./lib/observability/runtime";
-import { originAuth } from "./lib/originAuth";
+import { assertOriginAuthConfig, originAuth } from "./lib/originAuth";
 
 dotenv.config();
 
@@ -77,7 +77,9 @@ const PORT = process.env.PORT || 8080;
 app.set("trust proxy", trustProxyHops);
 app.disable("x-powered-by");
 // Before everything else: requests must come through the Cloudflare Worker (lib/originAuth.ts), which also supplies
-// the visitor's IP that the rate limiters, risk rules, reCAPTCHA and logs read from req.ip.
+// the visitor's IP that the rate limiters, risk rules, reCAPTCHA and logs read from req.ip. Enforcing without the
+// secret throws here, before the server listens, so Cloud Run keeps serving the previous revision.
+assertOriginAuthConfig();
 app.use(originAuth);
 
 const server = app.listen(PORT, () => {

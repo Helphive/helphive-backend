@@ -1,14 +1,33 @@
 // Run with: npx ts-node tests/originAuth.test.ts
 // Origin auth: requests through the Cloudflare Worker carry the shared secret and the visitor's IP; direct calls are
-// logged (log mode) or refused (enforce); probes and local development (no secret) are never checked.
+// logged (log mode) or refused (enforce); probes and local development (no secret, no enforce) are never checked.
+// Enforcing without a secret fails closed: the server refuses to start, and requests are refused anyway.
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "http";
 import type { AddressInfo } from "net";
 import express from "express";
-import { checkOrigin, originAuth } from "../lib/originAuth";
+import { assertOriginAuthConfig, checkOrigin, originAuth } from "../lib/originAuth";
 
 const SECRET = "s".repeat(48);
+
+test("startup: enforce without a secret refuses to start; everything else starts", () => {
+	const refuse = /ORIGIN_AUTH_MODE=enforce but ORIGIN_AUTH is missing/;
+	assert.throws(() => assertOriginAuthConfig({ ORIGIN_AUTH_MODE: "enforce" }), refuse);
+	assert.throws(() => assertOriginAuthConfig({ ORIGIN_AUTH_MODE: "enforce", ORIGIN_AUTH: "" }), refuse);
+	assert.throws(() => assertOriginAuthConfig({ ORIGIN_AUTH_MODE: "enforce", ORIGIN_AUTH: "   " }), refuse);
+	assert.doesNotThrow(() => assertOriginAuthConfig({ ORIGIN_AUTH_MODE: "enforce", ORIGIN_AUTH: SECRET }));
+	assert.doesNotThrow(() => assertOriginAuthConfig({}), "local development");
+	assert.doesNotThrow(() => assertOriginAuthConfig({ ORIGIN_AUTH_MODE: "log" }));
+});
+
+test("checkOrigin: enforcing without a secret treats every request as direct", () => {
+	assert.deepEqual(checkOrigin({}, { ORIGIN_AUTH_MODE: "enforce" }), { status: "direct", enforce: true });
+	assert.deepEqual(checkOrigin({ "x-origin-auth": "" }, { ORIGIN_AUTH_MODE: "enforce", ORIGIN_AUTH: "" }), {
+		status: "direct",
+		enforce: true,
+	});
+});
 
 test("checkOrigin: off without a secret, worker with the right one, direct otherwise", () => {
 	assert.deepEqual(checkOrigin({ "x-origin-auth": SECRET }, {}), { status: "off" });
@@ -80,7 +99,12 @@ test("middleware: visitor IP only with the secret; log mode passes, enforce refu
 			assert.equal((await get("/readyz")).status, 200, "Cloud Run probe");
 		});
 		await withEnv({ ORIGIN_AUTH: undefined, ORIGIN_AUTH_MODE: "enforce" }, async () => {
-			assert.equal((await get("/whoami")).status, 200, "no secret configured: local development");
+			assert.equal((await get("/whoami")).status, 403, "enforcing without a secret fails closed");
+			assert.equal((await get("/whoami", { "x-origin-auth": "" })).status, 403);
+			assert.equal((await get("/readyz")).status, 200, "Cloud Run probe");
+		});
+		await withEnv({ ORIGIN_AUTH: undefined, ORIGIN_AUTH_MODE: undefined }, async () => {
+			assert.equal((await get("/whoami")).status, 200, "no secret, no enforce: local development");
 		});
 	} finally {
 		await app.close();

@@ -68,7 +68,7 @@ Full details, checked against the live setup: [docs/infrastructure.md](docs/infr
 - **Cloudflare:** the shared `himaiz.com` zone's WAF and settings are managed centrally in `maiznadeem/OracleVMOps`;
   `api.helphive` skips the browser checks because its callers are apps and webhooks.
 - **Secrets:** one Secret Manager secret, `helphive-secrets` (JSON, env var `APP_SECRETS`), plus the edge Worker's
-  `ORIGIN_AUTH`. No service-account keys.
+  `ORIGIN_AUTH`. The API itself uses no service-account key.
 - **Data:** MongoDB Atlas database `Helphive-Dev`, used through the `helphive-app` user (`readWrite` on that database
   only); files in Cloud Storage.
 

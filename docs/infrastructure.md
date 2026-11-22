@@ -123,7 +123,9 @@ survives deploys. Its plain variable `ORIGIN` (the Cloud Run URL) is in `edge/ap
   `X-Forwarded-Proto`, and forwards with `redirect: "manual"`. It builds the target from the `ORIGIN` URL and only
   copies the path and query, so a crafted path can't send the secret elsewhere. In the API, `lib/originAuth.ts` runs
   first: with `ORIGIN_AUTH_MODE=enforce` (a plain Cloud Run variable; `off` disables it) any request without the right
-  secret gets 403, including WebSocket upgrades. Only the Cloud Run probes `/readyz`, `/healthz` and `/livez` are
+  secret gets 403, including WebSocket upgrades. It fails closed: enforcing without `ORIGIN_AUTH` (missing or
+  blank) makes the server refuse to start, so a dropped secret can't reopen the direct URL; the new revision never
+  becomes ready and the previous one keeps serving. Only the Cloud Run probes `/readyz`, `/healthz` and `/livez` are
   exempt. The direct `*.run.app` URL therefore answers 403. `req.ip` and the rate limiters use `X-Client-IP` only
   when the secret is valid.
 - **WebSocket.** The provider socket goes through the edge Worker. The server pings every 30 seconds, because

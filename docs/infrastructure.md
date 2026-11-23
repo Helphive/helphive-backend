@@ -158,6 +158,11 @@ Both the API and the edge Worker follow the shared logging standard (`LOGGING.md
 - **Never logged:** request or response bodies, cookies, tokens, passwords, emails (masked if they slip into a
   message) or phone numbers. Errors keep their name, code and stack.
 - The admin console's log viewer reads these lines (`msg`, `event`, `ray`, request fields) as well as older ones.
+- **Routes:** every router runs `markRouteBase` first, so error lines keep the mount path after Express resets
+  `req.baseUrl`. A request no route handled (rejected by middleware such as the client-pass guard, or the catch-all 404) logs only its first path segment (`/auth/*`).
+- **Cloud Run's platform request log is excluded** from the project's `_Default` sink (exclusion
+  `cloud-run-request-urls`, `LOG_ID("run.googleapis.com/requests")`): it stores every full URL, query string included.
+  The app's own `request` lines replace it.
 
 ## Secrets (names and places only)
 

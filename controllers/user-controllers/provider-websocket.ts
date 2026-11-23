@@ -29,6 +29,8 @@ export const PROVIDER_AVAILABILITY_PATH = "/provider-availability";
 // Latest socket per provider. A reconnect opens a new socket before the old one's close event fires, so only the
 // latest socket may mark the provider offline.
 const activeSockets = new Map<string, WS>();
+// The provider's user id for each signed-in socket, so connect and disconnect lines carry the id, never the email.
+const socketUserIds = new Map<string, string>();
 
 const isApprovedProvider = (user: InstanceType<typeof UserModel>) =>
 	!!user.roles?.Provider && user.providerStatus === "approved";
@@ -36,6 +38,7 @@ const isApprovedProvider = (user: InstanceType<typeof UserModel>) =>
 const authenticate = async (token: string): Promise<ProviderCheck> => {
 	const result = await verifyAccessToken(token);
 	if (!result.ok || !isApprovedProvider(result.user)) return { ok: false };
+	socketUserIds.set(result.email, String(result.user._id));
 	return { ok: true, email: result.email, sessionId: result.sessionId };
 };
 
@@ -114,7 +117,7 @@ const markOffline = async (email: string, closeCode: number | null) => {
 			recordAvailabilityChange(previous._id, false, "disconnect", undefined, closeCode);
 		}
 	} catch (error) {
-		log.error("Error updating provider availability on disconnect", error);
+		log.error("updating_provider_availability_failed", "Error updating provider availability on disconnect", error);
 	}
 };
 
@@ -130,18 +133,29 @@ export const handleProviderAvailabilityWebSocket = (ws: WS) => {
 		authenticate,
 		stillAuthorized,
 		saveAvailability,
-		onAuthenticated: (email) => activeSockets.set(email, ws),
+		onAuthenticated: (email) => {
+			activeSockets.set(email, ws);
+			log.info("ws_connected", "Provider availability socket connected", { userId: socketUserIds.get(email) });
+		},
 		onAuthenticatedClose: (email, end) => {
 			if (activeSockets.get(email) !== ws) return;
 			activeSockets.delete(email);
+			const userId = socketUserIds.get(email);
+			socketUserIds.delete(email);
 			// A lost connection (app in the background, no signal, app killed, this instance replaced) keeps the
 			// provider available: job alerts reach them as push notifications. Only a deliberate end switches them off.
 			if (end.offline) void markOffline(email, end.code);
-			else log.info("Provider availability socket lost; the provider stays available", { closeCode: end.code });
+			log.info(
+				"ws_disconnected",
+				end.offline
+					? "Provider availability socket closed; the provider is offline"
+					: "Provider availability socket lost; the provider stays available",
+				{ userId, closeCode: end.code, offline: end.offline },
+			);
 		},
 		setTimer: (fn, ms) => setTimeout(fn, ms),
 		clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout),
-		log: (message, error) => log.error(message, error),
+		log: (message, error) => log.error("provider_socket_error", message, error),
 	});
 };
 
@@ -180,7 +194,10 @@ export const createProviderAvailabilityUpgradeHandler = (trustProxyHops: number)
 		const origin = checkOrigin(req.headers);
 		if (origin.status === "direct") {
 			if (origin.enforce) return rejectUpgrade(socket, 403, "Forbidden", "Forbidden");
-			log.warn("Origin auth missing (log only)", { method: "GET", path: PROVIDER_AVAILABILITY_PATH });
+			log.warn("origin_auth_missing", "Origin auth missing (log only)", {
+				method: "GET",
+				path: PROVIDER_AVAILABILITY_PATH,
+			});
 		}
 		const ip =
 			origin.status === "worker" && origin.clientIp

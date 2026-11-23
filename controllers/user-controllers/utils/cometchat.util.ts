@@ -9,7 +9,10 @@ import log from "../../../lib/logger";
 
 const logFailure = (what: string) => (error: any) => {
 	if (error instanceof ChatNotConfiguredError) return;
-	log.error(`CometChat: could not ${what}`, { status: error?.status ?? null, code: error?.code ?? "unknown" });
+	log.error("cometchat_call_failed", `CometChat: could not ${what}`, {
+		status: error?.status ?? null,
+		code: error?.code ?? "unknown",
+	});
 };
 
 /** The person's CometChat user, made at sign-up. Their email is not sent to CometChat (it does not need it). */

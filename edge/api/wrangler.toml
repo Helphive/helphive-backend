@@ -12,5 +12,11 @@ routes = [{ pattern = "api.helphive.himaiz.com", custom_domain = true }]
 [vars]
 ORIGIN = "https://helphive-backend-sjzzjsey3a-uc.a.run.app"
 
+# Workers Logs keep only the JSON line index.js writes (OracleVMOps LOGGING.md). Cloudflare's own invocation logs and
+# the request attached to each event would store the full URL, query string included, so those are off or redacted.
 [observability]
 enabled = true
+redact_query_string = true
+
+[observability.logs]
+invocation_logs = false

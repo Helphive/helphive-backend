@@ -28,7 +28,7 @@ export const isGenuineBookingEvent = async (
 		);
 	} catch (error) {
 		// When it cannot be checked, it is a person's message: pushed, counted and reportable.
-		log.warn("Could not check who sent a booking event message", {
+		log.warn("check_who_sent_failed", "Could not check who sent a booking event message", {
 			code: error instanceof Error ? error.name : "unknown",
 		});
 		return false;

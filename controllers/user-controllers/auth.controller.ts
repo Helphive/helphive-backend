@@ -97,7 +97,7 @@ export const handleSignup = async (req: Request, res: Response, next: NextFuncti
 
 		next();
 	} catch (error) {
-		log.error("Error signing up", error);
+		log.error("signup_failed", "Error signing up", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -153,7 +153,7 @@ export const handleSignupProvider = async (req: Request, res: Response, next: Ne
 
 		next();
 	} catch (error) {
-		log.error("Error signing up", error);
+		log.error("signup_failed", "Error signing up", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -230,7 +230,7 @@ export const handleLogin = async (req: Request, res: Response) => {
 			return res.status(401).json({ message: LOGIN_FAILED_MESSAGE });
 		}
 	} catch (error) {
-		log.error("Error logging in", error);
+		log.error("login_failed", "Error logging in", error);
 		return res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -250,7 +250,7 @@ export const handleRefreshToken = async (req: Request, res: Response) => {
 			refreshToken: result.refreshToken,
 		});
 	} catch (error) {
-		log.error("Error refreshing session", error);
+		log.error("session_refresh_failed", "Error refreshing session", error);
 		res.status(500).json({ message: "Internal server error!" });
 	}
 };
@@ -272,7 +272,7 @@ export const handleLogout = async (req: Request, res: Response) => {
 		}
 		res.sendStatus(204);
 	} catch (error) {
-		log.error("Error during logout", error);
+		log.error("logout_failed", "Error during logout", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -325,7 +325,7 @@ export const handleGetUserInfo = async (req: Request, res: Response) => {
 			return res.status(404).json({ message: "User not found" });
 		}
 	} catch (error) {
-		log.error("Error fetching user details", error);
+		log.error("fetching_user_details_failed", "Error fetching user details", error);
 		return res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -374,7 +374,7 @@ export const handleVerifyEmail = async (req: Request, res: Response) => {
 		} else if (error instanceof jwt.JsonWebTokenError) {
 			return res.status(400).json({ message: "Invalid token" });
 		}
-		log.error("Error verifying email", error);
+		log.error("verifying_email_failed", "Error verifying email", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -441,7 +441,7 @@ export const handleResetPassword = async (req: Request, res: Response) => {
 		} else if (error instanceof jwt.JsonWebTokenError) {
 			return res.status(400).json({ message: "Invalid token" });
 		}
-		log.error("Error resetting password", error);
+		log.error("resetting_password_failed", "Error resetting password", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -449,10 +449,10 @@ export const handleResetPassword = async (req: Request, res: Response) => {
 export const handleOneSignalSetup = async (user: any) => {
 	try {
 		await oneSignalApi.delete(`/apps/${ONE_SIGNAL_APP_ID}/users/by/external_id/${user._id}/identity/external_id`);
-		log.info(`Deleted OneSignal user with external ID ${user._id}`);
+		log.info("onesignal_user_deleted", `Deleted OneSignal user with external ID ${user._id}`);
 	} catch (error: any) {
 		if (error.response && error.response.status !== 404) {
-			log.error("Error setting up OneSignal", error);
+			log.error("onesignal_setup_failed", "Error setting up OneSignal", error);
 		}
 	}
 };
@@ -507,7 +507,7 @@ export const handleCompleteBooking = async (req: Request, res: Response) => {
 
 		res.status(200).json({ message: "Booking has been completed." });
 	} catch (error) {
-		log.error("Error completing job", error);
+		log.error("completing_job_failed", "Error completing job", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -560,7 +560,7 @@ export const handleCancelBooking = async (req: Request, res: Response) => {
 
 		res.status(200).json({ message: "Booking has been cancelled." });
 	} catch (error) {
-		log.error("Error cancelling booking", error);
+		log.error("cancelling_booking_failed", "Error cancelling booking", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -615,7 +615,7 @@ export const handleUpdateProfile = async (req: Request, res: Response) => {
 				photo = true;
 				await updateCometChatUser(userId, destinationPath);
 			} catch (error) {
-				log.error(`Error uploading profile image to ${destinationPath}:`, error);
+				log.error("profile_image_upload_failed", `Error uploading profile image to ${destinationPath}:`, error);
 				throw error;
 			}
 		}
@@ -633,7 +633,7 @@ export const handleUpdateProfile = async (req: Request, res: Response) => {
 
 		res.status(200).json({ message: "Profile updated successfully." });
 	} catch (error) {
-		log.error("Error updating profile", error);
+		log.error("updating_profile_failed", "Error updating profile", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -702,7 +702,7 @@ export const handleGetNotifications = async (req: Request, res: Response) => {
 			unreadCount,
 		});
 	} catch (error) {
-		log.error("Error fetching notifications", error);
+		log.error("fetching_notifications_failed", "Error fetching notifications", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -718,7 +718,7 @@ export const handleGetUnreadNotificationCount = async (req: Request, res: Respon
 		const unreadCount = await NotificationModel.countDocuments({ userId: String(user._id), read: false });
 		res.status(200).json({ unreadCount });
 	} catch (error) {
-		log.error("Error fetching unread notification count", error);
+		log.error("fetching_unread_notification_failed", "Error fetching unread notification count", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -732,7 +732,7 @@ export const handleMarkAllNotificationsAsRead = async (req: Request, res: Respon
 		const result = await NotificationModel.updateMany({ userId: String(user._id), read: false }, { read: true });
 		res.status(200).json({ modifiedCount: result.modifiedCount });
 	} catch (error) {
-		log.error("Error marking all notifications as read", error);
+		log.error("marking_all_notifications_failed", "Error marking all notifications as read", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -757,7 +757,7 @@ export const handleDeleteNotification = async (req: Request, res: Response) => {
 		await notification.deleteOne();
 		res.status(200).json({ message: "Notification deleted." });
 	} catch (error) {
-		log.error("Error deleting notification", error);
+		log.error("deleting_notification_failed", "Error deleting notification", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -837,7 +837,7 @@ export const handleGetBookingReceipt = async (req: Request, res: Response) => {
 			},
 		});
 	} catch (error) {
-		log.error("Error getting booking receipt", error);
+		log.error("getting_booking_receipt_failed", "Error getting booking receipt", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -877,7 +877,7 @@ export const handleMarkNotificationAsRead = async (req: Request, res: Response) 
 			message: "Notification marked as read.",
 		});
 	} catch (error) {
-		log.error("Error marking notification as read", error);
+		log.error("marking_notification_as_failed", "Error marking notification as read", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});

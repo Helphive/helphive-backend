@@ -3,9 +3,6 @@ import { GOOGLE_CLOUD_PROJECT_ID } from "../config/config";
 import { buildRequestContext, runWithContext } from "../lib/requestContext";
 import { buildRequestLogEntry, writeEntry } from "../lib/logger";
 
-// Health probes are frequent and uninteresting; they are logged only when they fail.
-export const QUIET_PATHS = new Set(["/healthz", "/livez", "/readyz"]);
-
 const projectId = () => process.env.GOOGLE_CLOUD_PROJECT || GOOGLE_CLOUD_PROJECT_ID;
 
 /** The matched route pattern while still inside the router (Express resets baseUrl once the router is left). */
@@ -16,7 +13,8 @@ const routePattern = (req: Request) => {
 
 /**
  * First middleware: builds the request context (request id, client address, user agent, app headers, trace), returns
- * X-Request-Id, adds `requestId` to JSON error bodies, and writes one access-log line when the response finishes.
+ * X-Request-Id, adds `requestId` to JSON error bodies, and writes one `request` line when the response finishes
+ * (health probes and CORS preflights at debug, so LOG_LEVEL=info leaves them out).
  */
 export const requestContext = (req: Request, res: Response, next: NextFunction) => {
 	const started = process.hrtime.bigint();
@@ -46,17 +44,13 @@ export const requestContext = (req: Request, res: Response, next: NextFunction) 
 	}) as Response["end"];
 
 	res.on("finish", () => {
-		if (QUIET_PATHS.has(req.path) && res.statusCode < 500) return;
-		const length = Number(res.getHeader("content-length"));
 		writeEntry(
 			buildRequestLogEntry(
 				{
 					method: req.method,
-					originalUrl: req.originalUrl,
+					path: req.path,
 					status: res.statusCode,
 					latencyMs: Number(process.hrtime.bigint() - started) / 1e6,
-					responseSize: Number.isFinite(length) ? length : undefined,
-					protocol: `HTTP/${req.httpVersion}`,
 				},
 				context,
 			),

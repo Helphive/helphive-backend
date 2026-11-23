@@ -25,8 +25,7 @@ export const isActiveAdmin = (admin: Pick<Admin, "roles" | "disabled"> | null | 
 export const signAdminToken = (admin: Admin) => signAdminAccessToken(admin).token;
 
 export type AdminAuthResult =
-	| { ok: true; admin: Admin; sessionId?: string }
-	| { ok: false; status: 401 | 500; message: string };
+	{ ok: true; admin: Admin; sessionId?: string } | { ok: false; status: 401 | 500; message: string };
 
 /**
  * Checks a bearer token: HS256, admin audience, unexpired; the admin exists, is active and the token version matches
@@ -77,7 +76,7 @@ const authenticate = async (req: Request): Promise<AdminAuthResult> => {
 		}
 		return { ok: true, admin };
 	} catch (error) {
-		log.error("Error verifying admin token", error);
+		log.error("verifying_admin_token_failed", "Error verifying admin token", error);
 		return { ok: false, status: 500, message: "Server error" };
 	}
 };

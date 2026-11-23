@@ -115,7 +115,9 @@ export const recordDisputeEvent = async (event: Stripe.Event): Promise<string | 
 			});
 		}
 		if (!payment) {
-			log.warn("Dispute recorded for a payment intent with no payment record", { disputeId: record.disputeId });
+			log.warn("dispute_without_payment", "Dispute recorded for a payment intent with no payment record", {
+				disputeId: record.disputeId,
+			});
 			return "payment not found";
 		}
 		return;

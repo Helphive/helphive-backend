@@ -17,10 +17,10 @@ const connectDB = async (
 	for (let attempt = 1; ; attempt++) {
 		try {
 			await connect();
-			if (attempt > 1) log.info(`Connected to MongoDB on attempt ${attempt}`);
+			if (attempt > 1) log.info("db_connected", `Connected to MongoDB on attempt ${attempt}`);
 			return attempt;
 		} catch (err) {
-			log.critical(`Could not connect to MongoDB (attempt ${attempt}); trying again`, err);
+			log.critical("db_connect_failed", `Could not connect to MongoDB (attempt ${attempt}); trying again`, err);
 			await wait(reconnectDelayMs(attempt));
 		}
 	}

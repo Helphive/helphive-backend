@@ -366,7 +366,8 @@ export const ensureDefaultRules = async () => {
 		})),
 		{ ordered: false },
 	);
-	if (result.upsertedCount) log.info(`Risk: added ${result.upsertedCount} default rules in observe mode.`);
+	if (result.upsertedCount)
+		log.info("risk_default_rules_added", `Risk: added ${result.upsertedCount} default rules in observe mode.`);
 	return result.upsertedCount;
 };
 
@@ -742,7 +743,7 @@ const drain = async () => {
 					),
 				]);
 			} catch (error) {
-				log.error(`Risk evaluation failed for user ${userId}`, error);
+				log.error("risk_evaluation_failed", `Risk evaluation failed for user ${userId}`, error);
 			}
 		}
 	} finally {
@@ -754,7 +755,7 @@ export const scheduleEvaluation = (userIds: string[], trigger: EvaluationTrigger
 	for (const userId of userIds) {
 		if (!/^[a-f\d]{24}$/i.test(userId)) continue;
 		if (!pending.has(userId) && pending.size >= MAX_PENDING) {
-			log.warn("Risk evaluation queue is full; an evaluation was skipped.");
+			log.warn("risk_queue_full", "Risk evaluation queue is full; an evaluation was skipped.");
 			continue;
 		}
 		pending.set(userId, trigger);
@@ -782,11 +783,11 @@ export const handleRecordedEvent = (doc: Record<string, unknown>) => {
 				}
 				scheduleEvaluation(people, trigger);
 			} catch (error) {
-				log.error(`Risk: could not handle event ${event.type}`, error);
+				log.error("risk_event_failed", `Risk: could not handle event ${event.type}`, error);
 			}
 		})();
 	} catch (error) {
-		log.error("Risk: could not read a recorded event", error);
+		log.error("risk_event_read_failed", "Risk: could not read a recorded event", error);
 	}
 };
 
@@ -797,7 +798,10 @@ export const startRiskEngine = () => {
 	if (started) return;
 	started = true;
 	onEventRecorded(handleRecordedEvent);
-	const seed = () => ensureDefaultRules().catch((error) => log.error("Risk: could not add the default rules", error));
+	const seed = () =>
+		ensureDefaultRules().catch((error) =>
+			log.error("risk_default_rules_failed", "Risk: could not add the default rules", error),
+		);
 	if (mongoose.connection.readyState === 1) void seed();
 	else mongoose.connection.once("open", () => void seed());
 };

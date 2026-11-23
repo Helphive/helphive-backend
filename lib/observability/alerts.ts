@@ -223,7 +223,10 @@ export const evaluateRules = async (now = new Date()) => {
 				});
 				const notified = await notify(rule, alert, "firing");
 				await AlertModel.updateOne({ _id: alert._id }, { $set: { notified: { at: new Date(), ...notified } } });
-				log.warn(`Alert firing: ${rule.name}`, { ruleId: String(rule._id), summary: evaluation.summary });
+				log.warn("alert_firing", `Alert firing: ${rule.name}`, {
+					ruleId: String(rule._id),
+					summary: evaluation.summary,
+				});
 			} else if (action === "resolve" && open) {
 				await AlertModel.updateOne(
 					{ _id: open._id, status: { $ne: "resolved" } },
@@ -246,7 +249,7 @@ export const evaluateRules = async (now = new Date()) => {
 				{ $set: { lastEvaluatedAt: now, lastValue: evaluation.value, lastSummary: evaluation.summary } },
 			);
 		} catch (error) {
-			log.warn(`Observability: could not evaluate alert rule ${rule.name}`, {
+			log.warn("alert_evaluation_failed", `Observability: could not evaluate alert rule ${rule.name}`, {
 				reason: (error as Error)?.message,
 			});
 		}
@@ -277,7 +280,11 @@ export const startAlertLoop = () => {
 		if (running) return;
 		running = true;
 		tick()
-			.catch((error) => log.warn("Observability: alert evaluation failed", { reason: error?.message }))
+			.catch((error) =>
+				log.warn("alert_evaluation_failed", "Observability: alert evaluation failed", {
+					reason: error?.message,
+				}),
+			)
 			.finally(() => {
 				running = false;
 			});

@@ -121,7 +121,7 @@ const answerError = (res: Response, error: unknown, what: string) => {
 			.status(503)
 			.json({ message: "That query took too long. Choose a shorter range or a longer interval." });
 	}
-	log.error(`Error ${what}`, error);
+	log.error("exception", `Error ${what}`, error);
 	return res.status(500).json({ message: "Internal server error" });
 };
 

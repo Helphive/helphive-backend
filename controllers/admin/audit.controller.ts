@@ -47,7 +47,7 @@ export const handleListAudit = async (req: Request, res: Response) => {
 	} catch (error) {
 		if (error instanceof ListQueryError)
 			return res.status(400).json({ message: error.message, field: error.field });
-		log.error("Error listing audit entries", error);
+		log.error("listing_audit_entries_failed", "Error listing audit entries", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -59,7 +59,7 @@ export const handleGetAuditEntry = async (req: Request, res: Response) => {
 		if (!entry) return res.status(404).json({ message: "Audit entry not found." });
 		res.json({ entry, description: AUDIT_ACTIONS[entry.action as keyof typeof AUDIT_ACTIONS] ?? null });
 	} catch (error) {
-		log.error("Error getting audit entry", error);
+		log.error("getting_audit_entry_failed", "Error getting audit entry", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };

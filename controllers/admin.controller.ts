@@ -71,7 +71,7 @@ export const handleSignup = async (req: Request, res: Response) => {
 
 		res.status(201).json({ message: "Admin created successfully" });
 	} catch (error) {
-		log.error("Error creating admin", error);
+		log.error("creating_admin_failed", "Error creating admin", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -107,7 +107,7 @@ export const handleGetProviderAccountRequests = async (req: Request, res: Respon
 		// Send modified requests with signed URLs
 		res.status(200).json(modifiedRequests);
 	} catch (error) {
-		log.error("Error getting provider account requests", error);
+		log.error("getting_provider_account_failed", "Error getting provider account requests", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -144,7 +144,7 @@ export const handleGetProviderAccountRequestsComplete = async (req: Request, res
 
 		res.status(200).json(modifiedRequests);
 	} catch (error) {
-		log.error("Error getting provider account requests", error);
+		log.error("getting_provider_account_failed", "Error getting provider account requests", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -160,7 +160,7 @@ async function generateSignedUrl(filePath: string): Promise<string> {
 		const [url] = await googleCloudStorage.bucket(providerAccountBucket).file(filePath).getSignedUrl(options);
 		return url;
 	} catch (error) {
-		log.error("Error generating a signed URL for a provider document", error);
+		log.error("generating_signed_url_failed", "Error generating a signed URL for a provider document", error);
 		throw error;
 	}
 }
@@ -224,7 +224,7 @@ export const handleUpdateProviderAccountRequestStatus = async (req: Request, res
 					.file(profileFilePath)
 					.copy(googleCloudStorage.bucket(userProfilesBucket).file(destinationPath));
 			} catch (error) {
-				log.error(`Error copying file to ${destinationPath}`, error);
+				log.error("copying_file_failed", `Error copying file to ${destinationPath}`, error);
 				throw error;
 			}
 			user.profile = destinationPath;
@@ -253,7 +253,7 @@ export const handleUpdateProviderAccountRequestStatus = async (req: Request, res
 
 		res.status(200).json("Provider account request and user status updated successfully");
 	} catch (error) {
-		log.error("Error updating provider account request status", error);
+		log.error("updating_provider_account_failed", "Error updating provider account request status", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -275,6 +275,10 @@ const sendAccountReviewNotification = async (userId: string, status: string, rea
 		});
 		await storeNotification(title, message, userId, "Home", type);
 	} catch (error) {
-		log.error(`Error sending account review notification for user ID ${userId}`, error);
+		log.error(
+			"sending_account_review_failed",
+			`Error sending account review notification for user ID ${userId}`,
+			error,
+		);
 	}
 };

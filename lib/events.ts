@@ -95,7 +95,7 @@ const notify = (doc: Record<string, unknown>) => {
 		try {
 			listener(doc);
 		} catch (error) {
-			log.error("An event listener failed", error);
+			log.error("event_listener_failed", "An event listener failed", error);
 		}
 	}
 };
@@ -109,7 +109,7 @@ export const emitEvent = (input: EventInput, req?: Request): void => {
 	try {
 		doc = buildEvent(input, req?.context ?? getRequestContext());
 	} catch (error) {
-		log.error(`Could not build event ${input.type}`, error);
+		log.error("build_event_failed", `Could not build event ${input.type}`, error);
 		return;
 	}
 	setImmediate(() => {
@@ -117,7 +117,7 @@ export const emitEvent = (input: EventInput, req?: Request): void => {
 			.then(() => notify(doc))
 			.catch((error: any) => {
 				if (error?.code === DUPLICATE_KEY) return;
-				log.error(`Could not record event ${input.type}`, error);
+				log.error("record_event_failed", `Could not record event ${input.type}`, error);
 			});
 	});
 };

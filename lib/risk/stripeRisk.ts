@@ -70,6 +70,6 @@ export const recordChargeAssessment = async (intent: Stripe.PaymentIntent, statu
 			scheduleEvaluation([String(booking.userId)], { type: `charge.${status}` });
 		}
 	} catch (error) {
-		log.error("Risk: could not record Stripe's assessment of a charge", error);
+		log.error("risk_record_stripe_failed", "Risk: could not record Stripe's assessment of a charge", error);
 	}
 };

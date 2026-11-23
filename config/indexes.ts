@@ -26,7 +26,10 @@ export const configureIndexing = () => {
  */
 export const reportIndexBuilds = () => {
 	if (!autoIndexEnabled()) {
-		log.info("Automatic index creation is off (MONGOOSE_AUTO_INDEX=false); run scripts/create-indexes.ts.");
+		log.info(
+			"index_creation_off",
+			"Automatic index creation is off (MONGOOSE_AUTO_INDEX=false); run scripts/create-indexes.ts.",
+		);
 		return;
 	}
 	const models = Object.values(mongoose.models);
@@ -35,8 +38,12 @@ export const reportIndexBuilds = () => {
 			.map((result, i) => ({ result, name: models[i].modelName }))
 			.filter(({ result }) => result.status === "rejected");
 		for (const { name, result } of failed) {
-			log.error(`Index creation failed for ${name}`, (result as PromiseRejectedResult).reason);
+			log.error(
+				"index_creation_failed",
+				`Index creation failed for ${name}`,
+				(result as PromiseRejectedResult).reason,
+			);
 		}
-		log.info(`Indexes checked for ${models.length} models; ${failed.length} failed.`);
+		log.info("indexes_checked", `Indexes checked for ${models.length} models; ${failed.length} failed.`);
 	});
 };

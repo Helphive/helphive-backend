@@ -117,7 +117,7 @@ export const createLimiter = ({ name, rule, kind, key, failuresOnly, isFailure, 
 			if (!onLimitReached) return reject();
 			// The counter already confirmed the limit is passed; if the hook cannot decide, refuse (fail closed).
 			onLimitReached(req, res, next, reject).catch((error) => {
-				log.error(`Rate limiter ${name} could not decide; refusing the request`, error);
+				log.error("rate_limiter_failed", `Rate limiter ${name} could not decide; refusing the request`, error);
 				reject();
 			});
 		},
@@ -181,7 +181,11 @@ export const lookupKnownAddress = async (key: string | null): Promise<KnownAddre
 		});
 		return (await Promise.race([isKnownAddress(key), timeout])) ? "known" : "unknown";
 	} catch (error) {
-		log.error("Known-address lookup failed; refusing the over-cap sign-in attempt", error);
+		log.error(
+			"known_address_lookup_failed",
+			"Known-address lookup failed; refusing the over-cap sign-in attempt",
+			error,
+		);
 		return "error";
 	} finally {
 		if (timer) clearTimeout(timer);
@@ -220,7 +224,7 @@ export const recordSuccessfulSignIn = (scope: SignInScope, req: Request, email: 
 	const key = knownAddressKey(scope, email, req.ip, signInHashSecret());
 	if (!key) return;
 	rememberKnownAddress(key, KNOWN_ADDRESS_TTL_MS).catch((error) =>
-		log.error("Could not record the sign-in address", error),
+		log.error("signin_address_record_failed", "Could not record the sign-in address", error),
 	);
 };
 

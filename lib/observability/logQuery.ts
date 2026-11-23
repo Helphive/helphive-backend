@@ -142,6 +142,10 @@ export interface CompactLogEntry {
 	timestamp: string | null;
 	severity: string;
 	message: string;
+	/** The standard `event` name (null on lines written before the logging standard and on platform lines). */
+	event: string | null;
+	/** The visitor's Cloudflare ray, when the request came through the edge. */
+	ray: string | null;
 	requestId: string | null;
 	route: string | null;
 	userId: string | null;
@@ -172,13 +176,31 @@ const latencyMs = (value: unknown) => {
 	return null;
 };
 
+/**
+ * The HTTP summary of an entry: Cloud Run's own request log (`httpRequest`), the API's `request` lines (method,
+ * route, status, ms per the logging standard), or the older `httpRequest` inside the payload.
+ */
+const httpOf = (raw: Record<string, any>, payload: Record<string, any>) => {
+	if (raw.httpRequest) return raw.httpRequest as Record<string, any>;
+	if (payload.event === "request" && typeof payload.method === "string") {
+		return {
+			requestMethod: payload.method,
+			requestUrl: payload.route ?? "",
+			status: payload.status,
+			latency: typeof payload.ms === "number" ? `${payload.ms / 1000}s` : undefined,
+		};
+	}
+	return (payload.httpRequest ?? null) as Record<string, any> | null;
+};
+
 /** One Cloud Logging entry in the shape the console shows. Accepts JSON and text payloads (and platform lines). */
 export const compactLogEntry = (raw: Record<string, any>, project: string): CompactLogEntry => {
 	const payload = (raw.jsonPayload ?? {}) as Record<string, any>;
-	const http = (raw.httpRequest ?? payload.httpRequest ?? null) as Record<string, any> | null;
+	const http = httpOf(raw, payload);
 	const trace = str(raw.trace) ?? str(payload["logging.googleapis.com/trace"]);
 	const error = payload.error && typeof payload.error === "object" ? payload.error : null;
 	const message =
+		str(payload.msg) ??
 		str(payload.message) ??
 		str(raw.textPayload) ??
 		(http ? `${http.requestMethod ?? ""} ${http.requestUrl ?? ""} ${http.status ?? ""}`.trim() : "") ??
@@ -188,6 +210,8 @@ export const compactLogEntry = (raw: Record<string, any>, project: string): Comp
 		timestamp: str(raw.timestamp),
 		severity: String(raw.severity ?? "DEFAULT"),
 		message: message ?? "",
+		event: str(payload.event, 80),
+		ray: str(payload.ray, 40),
 		requestId: str(payload.requestId, 100),
 		route: str(payload.route, 200),
 		userId: str(payload.userId, 40),

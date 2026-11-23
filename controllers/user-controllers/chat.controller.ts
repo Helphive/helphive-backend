@@ -34,10 +34,10 @@ const UNAVAILABLE = { message: "Chat is temporarily unavailable. Try again short
 const answer = (res: Response, error: unknown, what: string) => {
 	if (error instanceof ChatNotConfiguredError) return res.status(503).json(NOT_CONFIGURED);
 	if (error instanceof CometChatError) {
-		log.warn(`Chat request failed (${what})`, { status: error.status, code: error.code });
+		log.warn("chat_request_failed", `Chat request failed (${what})`, { status: error.status, code: error.code });
 		return res.status(502).json(UNAVAILABLE);
 	}
-	log.error(`Error ${what}`, error);
+	log.error("exception", `Error ${what}`, error);
 	return res.status(500).json({ message: "An error occurred while processing request." });
 };
 
@@ -362,7 +362,7 @@ export const handleBlockUser = async (req: Request, res: Response) => {
 		if (cometChat.configured) {
 			await cometChat.blockUser(me, target).catch((error) => {
 				synced = false;
-				log.warn("Could not block in CometChat", { code: error?.code ?? "unknown" });
+				log.warn("block_cometchat_failed", "Could not block in CometChat", { code: error?.code ?? "unknown" });
 			});
 		}
 		if (result.upsertedCount) {
@@ -394,7 +394,9 @@ export const handleUnblockUser = async (req: Request, res: Response) => {
 		if (cometChat.configured) {
 			await cometChat.unblockUser(String(user._id), target).catch((error) => {
 				synced = false;
-				log.warn("Could not unblock in CometChat", { code: error?.code ?? "unknown" });
+				log.warn("unblock_cometchat_failed", "Could not unblock in CometChat", {
+					code: error?.code ?? "unknown",
+				});
 			});
 		}
 		if (removed.deletedCount) {

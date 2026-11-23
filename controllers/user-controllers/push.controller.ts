@@ -32,7 +32,7 @@ export const handleRegisterPush = async (req: Request, res: Response) => {
 		}
 		res.json({ provider: "onesignal", externalId });
 	} catch (error) {
-		log.error("Error registering for push", error);
+		log.error("registering_push_failed", "Error registering for push", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -53,7 +53,7 @@ export const handleUnregisterPush = async (req: Request, res: Response) => {
 		}
 		res.sendStatus(204);
 	} catch (error) {
-		log.error("Error unregistering push", error);
+		log.error("unregistering_push_failed", "Error unregistering push", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };

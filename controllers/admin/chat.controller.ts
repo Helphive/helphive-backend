@@ -98,7 +98,10 @@ export const handleGetChatReport = async (req: Request, res: Response) => {
 		} catch (error) {
 			conversationUnavailable = error instanceof ChatNotConfiguredError ? "not_configured" : "unavailable";
 			if (error instanceof CometChatError) {
-				log.warn("Could not read a reported conversation", { status: error.status, code: error.code });
+				log.warn("read_reported_conversation_failed", "Could not read a reported conversation", {
+					status: error.status,
+					code: error.code,
+				});
 			}
 		}
 		res.json({
@@ -193,7 +196,9 @@ export const handleSuspendChat = async (req: Request, res: Response) => {
 			cometChatUpdated = await cometChat.updateUser(uid, { role: CHAT_SUSPENDED_ROLE }).then(
 				() => true,
 				(error) => {
-					log.warn("Could not set the suspended chat role", { code: error?.code ?? "unknown" });
+					log.warn("set_suspended_chat_failed", "Could not set the suspended chat role", {
+						code: error?.code ?? "unknown",
+					});
 					return false;
 				},
 			);
@@ -247,7 +252,9 @@ export const handleReinstateChat = async (req: Request, res: Response) => {
 			cometChatUpdated = await cometChat.updateUser(uid, { role: CHAT_MEMBER_ROLE }).then(
 				() => true,
 				(error) => {
-					log.warn("Could not restore the chat role", { code: error?.code ?? "unknown" });
+					log.warn("restore_chat_role_failed", "Could not restore the chat role", {
+						code: error?.code ?? "unknown",
+					});
 					return false;
 				},
 			);

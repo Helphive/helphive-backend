@@ -60,7 +60,10 @@ export const sendNotification = async (data: any) => {
 		return response.data;
 	} catch (error: any) {
 		// A failed push must not stop the caller from storing the in-app notification. Never log the payload.
-		log.error("Error sending notification", { status: error?.response?.status ?? null, code: error?.code ?? null });
+		log.error("sending_notification_failed", "Error sending notification", {
+			status: error?.response?.status ?? null,
+			code: error?.code ?? null,
+		});
 		return null;
 	}
 };
@@ -75,7 +78,9 @@ export const forgetPushAliases = (aliases: string[]) => {
 			.delete(`/apps/${ONE_SIGNAL_APP_ID}/users/by/external_id/${encodeURIComponent(alias)}/identity/external_id`)
 			.catch((error: any) => {
 				if (error?.response?.status !== 404) {
-					log.warn("Could not remove a push alias in OneSignal", { status: error?.response?.status ?? null });
+					log.warn("remove_push_alias_failed", "Could not remove a push alias in OneSignal", {
+						status: error?.response?.status ?? null,
+					});
 				}
 			});
 	}
@@ -101,7 +106,7 @@ export const storeNotification = async (
 			data: bookingId ? { bookingId, ...data } : data,
 		});
 	} catch (error) {
-		log.error("Error storing notification");
+		log.error("storing_notification_failed", "Error storing notification");
 		throw error;
 	}
 };

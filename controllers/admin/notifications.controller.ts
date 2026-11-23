@@ -226,12 +226,10 @@ export const handleSend = async (req: Request, res: Response) => {
 		if (decision === "in_progress")
 			return res.status(409).json({ message: "This announcement is being sent.", code: "send_in_progress" });
 		if (decision === "key_reused")
-			return res
-				.status(409)
-				.json({
-					message: "This key was used for a different announcement. Start a new send.",
-					code: "key_reused",
-				});
+			return res.status(409).json({
+				message: "This key was used for a different announcement. Start a new send.",
+				code: "key_reused",
+			});
 
 		const plan = await planAudience(parsed.segment, parsed.channels);
 		if (plan.problems.length)
@@ -356,7 +354,7 @@ const deliver = async (template: MessageTemplate, push: Recipient[], email: Reci
 			results.email.skippedBecause[result.reason] = (results.email.skippedBecause[result.reason] ?? 0) + 1;
 		} else {
 			results.email.failed++;
-			log.warn("Announcement email failed", { userId: r._id });
+			log.warn("announcement_email_failed", "Announcement email failed", { userId: r._id });
 		}
 	});
 	return results;

@@ -1,38 +1,40 @@
-// The one logger. Each call writes a single JSON object on one line to stdout (stderr for errors), in the shape Cloud
-// Logging reads from Cloud Run: `severity`, `message`, optional `httpRequest`, and the trace field that groups the
-// line with Cloud Run's own request log. Request id, route, actor and app platform/version come from the request
-// context automatically.
+// The one logger, in the shared logging standard (OracleVMOps LOGGING.md): each call writes one JSON object on one
+// line to stdout with `time`, `level`, `app`, `part`, `event` (a fixed snake_case name per call site), `ray` (the
+// visitor's Cloudflare ray) and `msg`, plus `severity` and the trace fields Cloud Logging reads, so a line groups with
+// Cloud Run's own request log. Request id, route, actor ids and app platform/version come from the request context.
 //
-// Never pass request bodies, tokens or passwords. Email addresses inside messages are masked as a safety net, and
-// error objects are reduced to name, message, code and stack (the stack stays in the log, never in a response).
+// Never pass request bodies, cookies, tokens, passwords, emails or phone numbers. Email addresses inside messages are
+// masked as a safety net, and error objects are reduced to name, message, code and stack (never sent to a client).
+// LOG_LEVEL (debug, info, warn, error; default info) drops lines below it.
 import { getRequestContext, type RequestContext } from "./requestContext";
 import { maskEmailsIn, redact } from "./redact";
 
 export type Severity = "DEBUG" | "INFO" | "NOTICE" | "WARNING" | "ERROR" | "CRITICAL";
+export type Level = "debug" | "info" | "warn" | "error";
 
-export interface HttpRequestLog {
-	requestMethod: string;
-	requestUrl: string;
-	status: number;
-	/** Seconds with "s" suffix, e.g. "0.042s", as Cloud Logging expects. */
-	latency: string;
-	remoteIp?: string;
-	userAgent?: string;
-	responseSize?: string;
-	protocol?: string;
-}
+export const APP = "helphive" as const;
+export const PART = "api" as const;
 
 export interface LogEntry {
-	severity: Severity;
-	message: string;
 	time: string;
+	level: Level;
+	app: typeof APP;
+	part: typeof PART;
+	event: string;
+	ray?: string;
+	msg: string;
+	/** Cloud Logging's level field. */
+	severity: Severity;
 	requestId?: string;
 	route?: string;
 	userId?: string;
 	adminId?: string;
 	appPlatform?: string;
 	appVersion?: string;
-	httpRequest?: HttpRequestLog;
+	/** Request lines only. */
+	method?: string;
+	status?: number;
+	ms?: number;
 	error?: { name?: string; message: string; code?: string | number; type?: string; stack?: string };
 	details?: unknown;
 	"logging.googleapis.com/trace"?: string;
@@ -43,6 +45,18 @@ export interface LogEntry {
 
 const MAX_MESSAGE = 2000;
 const MAX_STACK = 8000;
+const RANK: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
+
+export const levelOf = (severity: Severity): Level =>
+	severity === "DEBUG"
+		? "debug"
+		: severity === "WARNING"
+			? "warn"
+			: severity === "ERROR" || severity === "CRITICAL"
+				? "error"
+				: "info";
+
+const minRank = () => RANK[(process.env.LOG_LEVEL ?? "").toLowerCase() as Level] ?? RANK.info;
 
 const isErrorLike = (value: unknown): value is { message: string; name?: string; stack?: string } =>
 	value instanceof Error ||
@@ -61,6 +75,18 @@ export const serializeError = (value: unknown): LogEntry["error"] => {
 		...(typeof error.stack === "string" ? { stack: maskEmailsIn(error.stack).slice(0, MAX_STACK) } : {}),
 	};
 };
+
+/** The standard's leading fields, in order. */
+const head = (severity: Severity, event: string, msg: string, context: RequestContext | undefined, now: Date) => ({
+	time: now.toISOString(),
+	level: levelOf(severity),
+	app: APP,
+	part: PART,
+	event,
+	...(context?.ray ? { ray: context.ray } : {}),
+	msg: maskEmailsIn(String(msg)).slice(0, MAX_MESSAGE),
+	severity,
+});
 
 /** Fields every line about a request carries. */
 export const contextFields = (context: RequestContext | undefined): Partial<LogEntry> => {
@@ -86,17 +112,13 @@ export const contextFields = (context: RequestContext | undefined): Partial<LogE
  */
 export const buildLogEntry = (
 	severity: Severity,
-	message: string,
+	event: string,
+	msg: string,
 	args: unknown[] = [],
 	context: RequestContext | undefined = getRequestContext(),
 	now: Date = new Date(),
 ): LogEntry => {
-	const entry: LogEntry = {
-		severity,
-		message: maskEmailsIn(String(message)).slice(0, MAX_MESSAGE),
-		time: now.toISOString(),
-		...contextFields(context),
-	};
+	const entry: LogEntry = { ...head(severity, event, msg, context, now), ...contextFields(context) };
 	const details: unknown[] = [];
 	for (const arg of args) {
 		if (arg === undefined) continue;
@@ -104,7 +126,7 @@ export const buildLogEntry = (
 		else details.push(redact(arg, { maxDepth: 4, maxStringLength: 500, maxArrayLength: 20 }));
 	}
 	if (details.length) entry.details = details.length === 1 ? details[0] : details;
-	// Cloud Error Reporting picks up ERROR entries whose message contains the stack.
+	// Cloud Error Reporting picks up ERROR entries that carry the stack.
 	if (entry.error?.stack && (severity === "ERROR" || severity === "CRITICAL")) {
 		entry.stack_trace = entry.error.stack;
 	}
@@ -113,53 +135,41 @@ export const buildLogEntry = (
 
 export interface RequestLogInput {
 	method: string;
-	originalUrl: string;
+	/** req.path: only used to spot health probes; never logged. */
+	path: string;
 	status: number;
 	latencyMs: number;
-	responseSize?: number;
-	protocol?: string;
 }
 
-/** Path without the query string: verification and reset links carry their token there. */
-export const pathOnly = (url: string) => {
-	const index = url.search(/[?#]/);
-	return (index === -1 ? url : url.slice(0, index)).slice(0, 512);
-};
+/** Cloud Run's probes; logged at debug like CORS preflights. */
+export const PROBE_PATHS: ReadonlySet<string> = new Set(["/healthz", "/livez", "/readyz"]);
 
-export const severityForStatus = (status: number): Severity =>
-	status >= 500 ? "ERROR" : status >= 400 ? "WARNING" : "INFO";
+/** Request lines: every 5xx at error, probes and preflights at debug, everything else at info. */
+export const requestSeverity = (input: Pick<RequestLogInput, "method" | "path" | "status">): Severity =>
+	input.status >= 500 ? "ERROR" : input.method === "OPTIONS" || PROBE_PATHS.has(input.path) ? "DEBUG" : "INFO";
 
-/** The access-log line for one finished request. */
+/** The line for one finished request: the matched route pattern (never the raw URL), status and duration. */
 export const buildRequestLogEntry = (
 	input: RequestLogInput,
 	context: RequestContext | undefined,
 	now: Date = new Date(),
 ): LogEntry => {
-	const path = pathOnly(input.originalUrl);
-	const latency = Math.max(0, input.latencyMs);
+	const route = context?.route ?? (PROBE_PATHS.has(input.path) ? input.path : "(unmatched)");
+	const ms = Math.max(0, Math.round(input.latencyMs));
 	return {
-		severity: severityForStatus(input.status),
-		message: `${input.method} ${context?.route ?? path} ${input.status} ${Math.round(latency)}ms`,
-		time: now.toISOString(),
+		...head(requestSeverity(input), "request", `${input.method} ${route} ${input.status}`, context, now),
 		...contextFields(context),
-		httpRequest: {
-			requestMethod: input.method,
-			requestUrl: path,
-			status: input.status,
-			latency: `${(latency / 1000).toFixed(3)}s`,
-			...(context?.ip ? { remoteIp: context.ip } : {}),
-			...(context?.userAgent ? { userAgent: context.userAgent } : {}),
-			...(input.responseSize !== undefined ? { responseSize: String(input.responseSize) } : {}),
-			...(input.protocol ? { protocol: input.protocol } : {}),
-		},
+		route,
+		method: input.method,
+		status: input.status,
+		ms,
 	};
 };
 
 type Sink = (line: string, severity: Severity) => void;
 
-const defaultSink: Sink = (line, severity) => {
-	if (severity === "ERROR" || severity === "CRITICAL" || severity === "WARNING") process.stderr.write(`${line}\n`);
-	else process.stdout.write(`${line}\n`);
+const defaultSink: Sink = (line) => {
+	process.stdout.write(`${line}\n`);
 };
 
 let sink: Sink = defaultSink;
@@ -171,12 +181,14 @@ export const setLogSink = (next: Sink): Sink => {
 	return previous;
 };
 
+/** Writes the entry unless its level is below LOG_LEVEL. */
 export const writeEntry = (entry: LogEntry) => {
+	if (RANK[entry.level] < minRank()) return;
 	let line: string;
 	try {
 		line = JSON.stringify(entry);
 	} catch {
-		line = JSON.stringify({ severity: entry.severity, message: entry.message, time: entry.time });
+		line = JSON.stringify({ ...head(entry.severity, entry.event, entry.msg, undefined, new Date(entry.time)) });
 	}
 	try {
 		sink(line, entry.severity);
@@ -193,8 +205,8 @@ export const observeErrorLogs = (observer: ((entry: LogEntry) => void) | null) =
 
 const at =
 	(severity: Severity) =>
-	(message: string, ...args: unknown[]) => {
-		const entry = buildLogEntry(severity, message, args);
+	(event: string, msg: string, ...args: unknown[]) => {
+		const entry = buildLogEntry(severity, event, msg, args);
 		writeEntry(entry);
 		if (errorObserver && (severity === "ERROR" || severity === "CRITICAL")) {
 			try {

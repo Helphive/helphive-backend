@@ -105,7 +105,7 @@ export const handleCreateBooking = async (req: Request, res: Response, next: Nex
 		req.bookingId = String(newBooking._id);
 		next();
 	} catch (error) {
-		log.error("Error handling create booking", error);
+		log.error("handling_create_booking_failed", "Error handling create booking", error);
 		res.status(500).json({
 			message: "An error occurred while processing the request.",
 		});
@@ -170,7 +170,7 @@ export const handleCreatePaymentIntent = async (req: Request, res: Response) => 
 			clientSecret: paymentIntent.client_secret,
 		});
 	} catch (error) {
-		log.error("Error handling create payment intent", error);
+		log.error("handling_create_payment_failed", "Error handling create payment intent", error);
 		res.status(500).json({
 			message: "An error occurred while processing the request.",
 		});
@@ -227,7 +227,7 @@ export const handleGetUserBookings = async (req: any, res: Response) => {
 
 		res.status(200).json({ history, active, scheduled });
 	} catch (error) {
-		log.error("Error fetching user bookings", error);
+		log.error("fetching_user_bookings_failed", "Error fetching user bookings", error);
 		res.status(500).json({
 			message: "An error occurred while fetching bookings.",
 		});
@@ -268,7 +268,7 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 			payment: serializePayment(payment, { includeClientSecret: true }),
 		});
 	} catch (error) {
-		log.error("Error getting booking by id", error);
+		log.error("getting_booking_id_failed", "Error getting booking by id", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -335,7 +335,7 @@ export const handleApproveStartJobRequest = async (req: Request, res: Response) 
 
 		res.status(200).json({ message: "Booking has been started." });
 	} catch (error) {
-		log.error("Error approving start job request", error);
+		log.error("approving_start_job_failed", "Error approving start job request", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});

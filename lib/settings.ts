@@ -318,7 +318,10 @@ export const mergeStoredSettings = (stored: Record<string, unknown>): SettingsSn
 		if (!Object.prototype.hasOwnProperty.call(stored, key)) continue;
 		const result = validateSettingValue(key, stored[key], out as unknown as SettingsSnapshot);
 		if (result.ok) out[key] = result.value;
-		else log.warn(`Stored setting ${key} is not valid; using its default`, { reason: result.message });
+		else
+			log.warn("setting_invalid", `Stored setting ${key} is not valid; using its default`, {
+				reason: result.message,
+			});
 	}
 	return out as unknown as SettingsSnapshot;
 };
@@ -448,7 +451,7 @@ export const getSettings = async (): Promise<SettingsSnapshot> => {
 			cache = { values, loadedAt: now() };
 			return values;
 		} catch (error) {
-			log.error("Could not read platform settings; using the last known values", error);
+			log.error("settings_read_failed", "Could not read platform settings; using the last known values", error);
 			const values = cache?.values ?? DEFAULT_SETTINGS;
 			// Try again soon rather than on every call.
 			cache = { values, loadedAt: now() - SETTINGS_TTL_MS + 5000 };

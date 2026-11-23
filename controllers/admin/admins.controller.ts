@@ -99,7 +99,7 @@ export const handleListAdmins = async (req: Request, res: Response) => {
 	} catch (error) {
 		if (error instanceof ListQueryError)
 			return res.status(400).json({ message: error.message, field: error.field });
-		log.error("Error listing admins", error);
+		log.error("listing_admins_failed", "Error listing admins", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -113,7 +113,7 @@ export const handleGetAdmin = async (req: Request, res: Response) => {
 		if (!admin) return res.status(404).json({ message: "Admin not found." });
 		res.json({ admin: publicAdmin(admin) });
 	} catch (error) {
-		log.error("Error getting admin", error);
+		log.error("getting_admin_failed", "Error getting admin", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -175,7 +175,7 @@ export const handleCreateAdmin = async (req: Request, res: Response) => {
 		});
 	} catch (error: any) {
 		if (error?.code === 11000) return res.status(409).json({ message: "Admin already exists" });
-		log.error("Error creating admin", error);
+		log.error("creating_admin_failed", "Error creating admin", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -231,7 +231,7 @@ export const handleChangeAdminRole = async (req: Request, res: Response) => {
 		);
 		res.json({ admin: publicAdmin(updated) });
 	} catch (error) {
-		log.error("Error changing admin role", error);
+		log.error("changing_admin_role_failed", "Error changing admin role", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -272,7 +272,7 @@ export const handleDisableAdmin = async (req: Request, res: Response) => {
 		);
 		res.json({ admin: publicAdmin(await findTarget(req.params.id)) });
 	} catch (error) {
-		log.error("Error disabling admin", error);
+		log.error("disabling_admin_failed", "Error disabling admin", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -301,7 +301,7 @@ export const handleEnableAdmin = async (req: Request, res: Response) => {
 		);
 		res.json({ admin: publicAdmin(updated) });
 	} catch (error) {
-		log.error("Error enabling admin", error);
+		log.error("enabling_admin_failed", "Error enabling admin", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -324,7 +324,7 @@ export const handleForceSignOut = async (req: Request, res: Response) => {
 		);
 		res.json({ sessionsEnded: sessions });
 	} catch (error) {
-		log.error("Error signing admin out", error);
+		log.error("admin_sign_out_failed", "Error signing admin out", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -366,7 +366,7 @@ export const handleResetAdminMfa = async (req: Request, res: Response) => {
 		);
 		res.json({ admin: publicAdmin(await findTarget(req.params.id)) });
 	} catch (error) {
-		log.error("Error resetting admin two-step sign-in", error);
+		log.error("admin_two_step_reset_failed", "Error resetting admin two-step sign-in", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };

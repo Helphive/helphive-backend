@@ -56,7 +56,7 @@ export const sendMagicLinkEmail = async (req: Request, res: Response) => {
 		}
 		res.status(201).json({ message: "Verification email sent" });
 	} catch (error) {
-		log.error("Error sending verification email", error);
+		log.error("sending_verification_email_failed", "Error sending verification email", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };
@@ -127,7 +127,7 @@ export const sendResetPasswordEmail = async (req: Request, res: Response) => {
 		);
 		res.status(201).json({ message: "Verification email sent" });
 	} catch (error) {
-		log.error("Error sending password reset email", error);
+		log.error("sending_password_reset_failed", "Error sending password reset email", error);
 		res.status(500).json({ message: "Internal Server Error" });
 	}
 };

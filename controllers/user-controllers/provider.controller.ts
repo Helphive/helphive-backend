@@ -143,7 +143,7 @@ export const handleRequestProviderAccount = async (req: Request, res: Response) 
 
 		res.status(200).json({ message: "Files uploaded successfully." });
 	} catch (error) {
-		log.error("Error handling file upload", error);
+		log.error("handling_file_upload_failed", "Error handling file upload", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -195,7 +195,7 @@ export const handleUpdateProviderAvailability = async (req: Request, res: Respon
 			selectedJobTypes: user.selectedJobTypes.map((job) => job.id),
 		});
 	} catch (error) {
-		log.error("Error updating provider availability", error);
+		log.error("updating_provider_availability_failed", "Error updating provider availability", error);
 		res.status(500).json({ message: "An error occurred while processing request." });
 	}
 };
@@ -211,7 +211,7 @@ export const handleAccountApprovalScreen = async (req: Request, res: Response) =
 		await user?.save();
 		res.status(200).json({ message: "Account approval screen set." });
 	} catch (error) {
-		log.error("Error approving account", error);
+		log.error("approving_account_failed", "Error approving account", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -254,7 +254,7 @@ export const handleGetBookings = async (req: Request, res: Response) => {
 			paidBookings: paidBookings.map((booking) => withCounterparties(withDisplayStatus(booking))),
 		});
 	} catch (error) {
-		log.error("Error getting bookings", error);
+		log.error("getting_bookings_failed", "Error getting bookings", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -301,7 +301,7 @@ export const handleGetBookingById = async (req: Request, res: Response) => {
 			payment: serializePayment(payment, { includeClientSecret: false }),
 		});
 	} catch (error) {
-		log.error("Error getting booking by id", error);
+		log.error("getting_booking_id_failed", "Error getting booking by id", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -393,7 +393,7 @@ export const handleAcceptBooking = async (req: Request, res: Response) => {
 
 		res.status(200).json({ message: "Booking accepted successfully." });
 	} catch (error) {
-		log.error("Error accepting booking", error);
+		log.error("accepting_booking_failed", "Error accepting booking", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -415,7 +415,7 @@ export const handleMyOrders = async (req: Request, res: Response) => {
 		const bookings = await BookingModel.find({ providerId: user._id }).sort({ startDate: 1 });
 		res.status(200).json(bookings.map(withDisplayStatus));
 	} catch (error) {
-		log.error("Error accepting booking", error);
+		log.error("accepting_booking_failed", "Error accepting booking", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -472,7 +472,7 @@ export const handleStartBooking = async (req: Request, res: Response) => {
 
 		res.status(200).json({ message: "Booking started successfully." });
 	} catch (error) {
-		log.error("Error starting booking", error);
+		log.error("starting_booking_failed", "Error starting booking", error);
 		res.status(500).json({
 			message: "An error occurred while processing request.",
 		});
@@ -524,7 +524,7 @@ export const handleGetStripeConnectedAccount = async (req: Request, res: Respons
 
 		return res.status(200).json({ connectedAccountOnboardingLink });
 	} catch (error) {
-		log.error("Error handling Stripe connected account", error);
+		log.error("handling_stripe_connected_failed", "Error handling Stripe connected account", error);
 		return res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -559,7 +559,7 @@ export const handleGetEarnings = async (req: Request, res: Response) => {
 			releasePolicy: { delaySeconds, testMode, notice },
 		});
 	} catch (error) {
-		log.error("Error getting provider earnings", error);
+		log.error("getting_provider_earnings_failed", "Error getting provider earnings", error);
 		return res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -656,7 +656,7 @@ export const handleCreatePayout = async (req: Request, res: Response) => {
 				};
 			}
 		} catch (error) {
-			log.error("Error reading payout destination", error);
+			log.error("reading_payout_destination_failed", "Error reading payout destination", error);
 		}
 
 		const payoutRecord = await PayoutModel.create({
@@ -685,11 +685,11 @@ export const handleCreatePayout = async (req: Request, res: Response) => {
 			payout: payoutRecord,
 		});
 	} catch (error: any) {
-		log.error("Error creating payout", error);
+		log.error("creating_payout_failed", "Error creating payout", error);
 		if (reservedFor) {
 			// Stripe did not create the payout; give the reserved amount back.
 			await UserModel.updateOne({ _id: reservedFor }, { $inc: { availableBalance: amount } }).catch((err) =>
-				log.error("Error restoring balance after a failed payout", err),
+				log.error("restoring_balance_after_failed", "Error restoring balance after a failed payout", err),
 			);
 		}
 
@@ -722,7 +722,7 @@ export const handleGetStripeExpressLoginLink = async (req: Request, res: Respons
 		const loginLink = await stripe.accounts.createLoginLink(user.stripeConnectedAccountId);
 		return res.status(200).json({ loginLink });
 	} catch (error) {
-		log.error("Error getting Stripe express login link", error);
+		log.error("getting_stripe_express_failed", "Error getting Stripe express login link", error);
 		return res.status(500).json({ message: "Internal server error" });
 	}
 };

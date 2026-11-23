@@ -312,6 +312,19 @@ test("error lines keep the router prefix after Express resets baseUrl (markRoute
 	res404.json({ message: "Not found" });
 	listeners.finish();
 	assert.equal(lines[0].route, "/auth/*");
+
+	// Rejected by middleware mounted at "/auth" (client pass): req.path has lost the prefix; the line must not.
+	lines.length = 0;
+	const reqGuard: any = { headers: {}, ip: "198.51.100.4", method: "GET", path: "/auth/login", baseUrl: "" };
+	reqGuard.originalUrl = "/auth/login?probe=SECRET";
+	const resGuard: any = { ...res, statusCode: 428 };
+	requestContext(reqGuard, resGuard, () => undefined);
+	reqGuard.path = "/login";
+	reqGuard.baseUrl = "/auth";
+	resGuard.json({ code: "CLIENT_PASS_REQUIRED" });
+	listeners.finish();
+	assert.equal(lines[0].route, "/auth/*");
+	assert.equal(JSON.stringify(lines[0]).includes("SECRET"), false);
 	setLogSink(previous);
 });
 

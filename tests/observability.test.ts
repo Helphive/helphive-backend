@@ -643,6 +643,34 @@ test("log entries are compacted with their trace link", () => {
 	assert.ok(entry.traceUrl?.includes("tid=0123456789abcdef0123456789abcdef"));
 	assert.equal(traceLink("nope", "helphive"), null);
 	assert.equal(compactLogEntry({ textPayload: "plain" }, "p").message, "plain");
+	assert.equal(entry.event, null, "lines from before the logging standard");
+
+	// A request line in the logging standard (msg, event, ray, method/route/status/ms).
+	const line = compactLogEntry(
+		{
+			insertId: "i2",
+			severity: "INFO",
+			jsonPayload: {
+				level: "info",
+				app: "helphive",
+				part: "api",
+				event: "request",
+				ray: "8a1b2c3d4e5f6a7b-LHR",
+				msg: "GET /auth/user-details 200",
+				route: "/auth/user-details",
+				method: "GET",
+				status: 200,
+				ms: 37,
+				userId: "64b7f0c2a1b2c3d4e5f60718",
+			},
+		},
+		"helphive",
+	);
+	assert.equal(line.message, "GET /auth/user-details 200");
+	assert.equal(line.event, "request");
+	assert.equal(line.ray, "8a1b2c3d4e5f6a7b-LHR");
+	assert.equal(line.userId, "64b7f0c2a1b2c3d4e5f60718");
+	assert.deepEqual(line.http, { method: "GET", url: "/auth/user-details", status: 200, latencyMs: 37 });
 });
 
 test("metric ranges round to their bucket and refuse unknown names", () => {

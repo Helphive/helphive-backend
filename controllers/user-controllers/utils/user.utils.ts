@@ -20,7 +20,11 @@ export const sendBookingStartApprovedNotification = async (providerId: string, b
 		});
 		await storeNotification(title, message, providerId, "MyOrderDetails", "booking_started", bookingId);
 	} catch (error: any) {
-		log.error(`Error sending booking started notification for booking ID ${bookingId}`, error);
+		log.error(
+			"sending_booking_started_failed",
+			`Error sending booking started notification for booking ID ${bookingId}`,
+			error,
+		);
 	}
 };
 
@@ -86,7 +90,11 @@ export const scheduleBookingNoShowCheck = async (
 		await createGoogleCloudTaskBookingNoShowTrigger(String(booking._id), noShowCheckAt(dueAt, now));
 		return true;
 	} catch (error) {
-		log.error(`Could not schedule the no-show check for booking ID ${String(booking._id)}`, error);
+		log.error(
+			"schedule_no_show_failed",
+			`Could not schedule the no-show check for booking ID ${String(booking._id)}`,
+			error,
+		);
 		return false;
 	}
 };
@@ -119,6 +127,10 @@ export const sendBookingNoShowNotification = async (userId: string, providerId: 
 			await storeNotification(title, message, id, screen, "booking_cancelled", bookingId);
 		}
 	} catch (error) {
-		log.error(`Error sending the not-started cancellation notification for booking ID ${bookingId}`, error);
+		log.error(
+			"sending_started_cancellation_failed",
+			`Error sending the not-started cancellation notification for booking ID ${bookingId}`,
+			error,
+		);
 	}
 };

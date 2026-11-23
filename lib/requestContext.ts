@@ -16,6 +16,8 @@ export interface RequestContext {
 	appVersion?: string;
 	/** X-Device-Id: an opaque per-install id chosen by the client. */
 	deviceId?: string;
+	/** Cloudflare's ray for the visitor's request (X-CF-Ray from the edge Worker, else CF-Ray), logged as `ray`. */
+	ray?: string;
 	/** "projects/<project>/traces/<trace id>" from X-Cloud-Trace-Context, for Cloud Logging correlation. */
 	trace?: string;
 	spanId?: string;
@@ -47,6 +49,8 @@ const APP_VERSION = /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$/;
 const DEVICE_ID = /^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$/;
 const REQUEST_ID = /^[0-9A-Za-z][0-9A-Za-z._:-]{7,63}$/;
 const TRACE = /^([0-9a-f]{32})(?:\/(\d{1,20}))?(?:;o=([01]))?$/i;
+// A Cloudflare ray: 16 hex digits, optionally followed by the data centre ("8a1b2c3d4e5f6a7b-LHR").
+const RAY = /^[0-9a-f]{16}(?:-[A-Z]{3})?$/i;
 
 const header = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value)?.trim();
 
@@ -77,6 +81,13 @@ export const parseTraceHeader = (value: string | string[] | undefined, projectId
 	};
 };
 
+/**
+ * The visitor's Cloudflare ray. The edge Worker sends it as X-CF-Ray, because Cloudflare gives the Worker's own call
+ * to this origin a new CF-Ray; CF-Ray is the fallback for anything that reaches the API another way.
+ */
+export const parseRay = (headers: Record<string, string | string[] | undefined>) =>
+	matching(header(headers["x-cf-ray"]), RAY) ?? matching(header(headers["cf-ray"]), RAY);
+
 /** Builds the context for one request from its headers and resolved client address. */
 export const buildRequestContext = (
 	headers: Record<string, string | string[] | undefined>,
@@ -84,8 +95,10 @@ export const buildRequestContext = (
 	projectId: string,
 ): RequestContext => {
 	const userAgent = header(headers["user-agent"]);
+	const ray = parseRay(headers);
 	return {
 		requestId: resolveRequestId(headers["x-request-id"]),
+		...(ray ? { ray } : {}),
 		ip: ip || undefined,
 		userAgent: userAgent ? userAgent.slice(0, MAX_USER_AGENT) : undefined,
 		...parseClientHeaders(headers),

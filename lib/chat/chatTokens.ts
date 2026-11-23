@@ -31,7 +31,7 @@ export const openChatToken = (sealed: string | undefined | null): string | null 
 
 const quiet = (what: string) => (error: unknown) => {
 	if (error instanceof ChatNotConfiguredError) return;
-	log.warn(`Could not ${what}`, { error: error instanceof Error ? error.message : "unknown" });
+	log.warn("chat_token_failed", `Could not ${what}`, { error: error instanceof Error ? error.message : "unknown" });
 };
 
 /** Revokes one session's token. Fire and forget. */

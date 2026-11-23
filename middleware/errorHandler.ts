@@ -25,6 +25,6 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
 		return res.status(400).json({ message: "Invalid file upload." });
 	}
 
-	log.error(`Unhandled error on ${req.method} ${req.path}`, err);
+	log.error("exception", `Unhandled error on ${req.method} ${req.context?.route ?? "(unmatched)"}`, err);
 	res.status(500).json({ message: "Internal Server Error", requestId: req.context?.requestId });
 };

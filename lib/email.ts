@@ -45,7 +45,7 @@ export const setEmailDependencies = (deps: { policy?: PolicyCheck; client?: Rese
 
 const recordSkip = (template: EmailTemplate, to: string, reason: BlockReason, userId?: string | null) => {
 	const domain = to.split("@").pop()?.toLowerCase() ?? null;
-	log.info(`Email ${template} not sent: ${reason}`, {
+	log.info("email_skipped", `Email ${template} not sent: ${reason}`, {
 		template,
 		reason,
 		recipient: maskEmail(to),
@@ -65,7 +65,7 @@ export const emailAllowed = async (template: EmailTemplate, to: string, userId?:
 		decision = await policy(to);
 	} catch (error) {
 		// The policy never throws by design; if it did, sending is the safer failure for transactional mail.
-		log.error("Email recipient policy failed; sending anyway", error);
+		log.error("email_policy_failed", "Email recipient policy failed; sending anyway", error);
 		return { allowed: true as const };
 	}
 	if (!decision.allowed) recordSkip(template, to, decision.reason, userId);
@@ -84,7 +84,10 @@ export const sendEmail = async (input: SendEmailInput): Promise<EmailResult> => 
 		});
 		if (error) {
 			const message = String((error as { message?: unknown }).message ?? error);
-			log.error(`Email ${input.template} was refused by the provider`, { template: input.template, message });
+			log.error("email_refused", `Email ${input.template} was refused by the provider`, {
+				template: input.template,
+				message,
+			});
 			return { status: "failed", error: message };
 		}
 		emitEvent({
@@ -98,7 +101,7 @@ export const sendEmail = async (input: SendEmailInput): Promise<EmailResult> => 
 		});
 		return { status: "sent", messageId: data?.id ?? null };
 	} catch (error) {
-		log.error(`Email ${input.template} could not be sent`, error);
+		log.error("email_failed", `Email ${input.template} could not be sent`, error);
 		return { status: "failed", error: error instanceof Error ? error.message : String(error) };
 	}
 };
@@ -150,8 +153,9 @@ export const addVerifiedContact = async (user: {
 			lastName: user.lastName,
 			userId: user._id ? String(user._id) : null,
 		});
-		if (result.status === "failed") log.error("Audience contact could not be added", new Error(result.error));
+		if (result.status === "failed")
+			log.error("audience_contact_add_failed", "Audience contact could not be added", new Error(result.error));
 	} catch (error) {
-		log.error("Audience contact could not be added", error);
+		log.error("audience_contact_add_failed", "Audience contact could not be added", error);
 	}
 };

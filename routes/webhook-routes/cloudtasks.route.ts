@@ -23,7 +23,10 @@ const MIN_SECRET_LENGTH = 16;
 const verifyHeader = (req: Request, res: Response, next: NextFunction) => {
 	const secret = process.env.GOOGLE_CLOUD_TASKS_SECRET || "";
 	if (secret.length < MIN_SECRET_LENGTH) {
-		log.error("GOOGLE_CLOUD_TASKS_SECRET is missing or too short; refusing Cloud Tasks calls.");
+		log.error(
+			"cloud_tasks_secret_missing",
+			"GOOGLE_CLOUD_TASKS_SECRET is missing or too short; refusing Cloud Tasks calls.",
+		);
 		return res.status(401).json({ message: "Unauthorized" });
 	}
 	const header = req.headers.authorization;

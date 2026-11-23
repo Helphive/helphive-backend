@@ -170,6 +170,6 @@ export const recordAudit = async (input: AuditInput, req?: Request): Promise<voi
 		const entry = buildAuditEntry(input, context);
 		await AuditLogModel.create(entry);
 	} catch (error) {
-		log.error(`Could not write audit entry ${input.action}`, error);
+		log.error("write_audit_entry_failed", `Could not write audit entry ${input.action}`, error);
 	}
 };

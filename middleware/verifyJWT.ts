@@ -28,7 +28,7 @@ export const verifyJWT = async (req: Request, res: Response, next: NextFunction)
 		setActor(result.user.roles?.Provider ? "provider" : "user", String(result.user._id), req.context);
 		next();
 	} catch (err) {
-		log.error("Error verifying token", err);
+		log.error("verifying_token_failed", "Error verifying token", err);
 		return res.status(500).send({ error: "Internal Server Error" });
 	}
 };

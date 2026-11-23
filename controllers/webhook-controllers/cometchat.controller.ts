@@ -58,7 +58,7 @@ const firstDelivery = async (key: string | null, trigger: string): Promise<boole
 		return result.upsertedCount === 1;
 	} catch (error) {
 		// If recording fails, process anyway: a rare double push beats a lost message event.
-		log.error("Could not record a CometChat webhook delivery", error);
+		log.error("record_cometchat_webhook_failed", "Could not record a CometChat webhook delivery", error);
 		return true;
 	}
 };
@@ -74,7 +74,10 @@ const removeMessage = async (message: ChatMessage, reason: string) => {
 		});
 		return true;
 	} catch (error: any) {
-		log.warn("Could not delete a chat message that breaks the rules", { code: error?.code ?? "unknown", reason });
+		log.warn("delete_chat_message_failed", "Could not delete a chat message that breaks the rules", {
+			code: error?.code ?? "unknown",
+			reason,
+		});
 		return false;
 	}
 };
@@ -239,7 +242,9 @@ export const handleCometChatWebhook = (req: Request, res: Response) => {
 	const payload = req.body;
 	setImmediate(() => {
 		const run = () =>
-			processCometChatWebhook(payload).catch((error) => log.error("Error handling a CometChat webhook", error));
+			processCometChatWebhook(payload).catch((error) =>
+				log.error("handling_cometchat_webhook_failed", "Error handling a CometChat webhook", error),
+			);
 		if (context) runWithContext(context, run);
 		else run();
 	});

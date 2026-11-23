@@ -401,7 +401,11 @@ export const handleRunReconciliation = async (req: Request, res: Response) => {
 				: error?.type?.startsWith?.("Stripe")
 					? `Stripe refused or did not answer: ${String(error.message ?? "").slice(0, 200)}`
 					: "The run failed; see the server log.";
-		log.error("Reconciliation run failed", { runId: String(run._id), name: error?.name, code: error?.code });
+		log.error("reconciliation_run_failed", "Reconciliation run failed", {
+			runId: String(run._id),
+			name: error?.name,
+			code: error?.code,
+		});
 		const finishedAt = new Date();
 		await ReconciliationRunModel.updateOne(
 			{ _id: run._id },

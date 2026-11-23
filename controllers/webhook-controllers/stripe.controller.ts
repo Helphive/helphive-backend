@@ -27,7 +27,7 @@ const supportEmail = SUPPORT_EMAIL || "";
  */
 const verifyStripeEvent = (req: Request, res: Response, secret: string, name: string): Stripe.Event | null => {
 	if (!secret) {
-		log.error(`${name} is not set; refusing Stripe webhook calls.`);
+		log.error("stripe_webhook_secret_missing", `${name} is not set; refusing Stripe webhook calls.`);
 		res.status(503).json({ message: "Webhook not configured." });
 		return null;
 	}
@@ -39,7 +39,9 @@ const verifyStripeEvent = (req: Request, res: Response, secret: string, name: st
 	try {
 		return stripe.webhooks.constructEvent(req.body, sig, secret);
 	} catch (err: any) {
-		log.warn("Stripe webhook signature verification failed", { reason: err?.message });
+		log.warn("stripe_webhook_signature_invalid", "Stripe webhook signature verification failed", {
+			reason: err?.message,
+		});
 		res.status(400).json({ message: "Invalid signature." });
 		return null;
 	}
@@ -108,7 +110,7 @@ export const handlePlatformEvent = (event: Stripe.Event, delivery: WebhookDelive
 			break;
 
 		default:
-			log.info(`Unhandled Stripe event type ${event.type}`);
+			log.info("stripe_event_unhandled", `Unhandled Stripe event type ${event.type}`);
 			delivery.finish("ignored");
 	}
 };
@@ -125,12 +127,12 @@ const updatePaymentStatus = async (
 			{ new: true },
 		);
 		if (!payment) {
-			log.info(`Payment with intent ID ${paymentIntentId} not found or already ${status}.`);
+			log.info("payment_not_found", `Payment with intent ID ${paymentIntentId} not found or already ${status}.`);
 			return `payment not found or already ${status}`;
 		}
 		const booking = await BookingModel.findById(payment.bookingId);
 		if (!booking) {
-			log.error(`Booking with ID ${payment.bookingId} not found.`);
+			log.error("booking_not_found", `Booking with ID ${payment.bookingId} not found.`);
 			return "booking not found";
 		}
 		if (status === "completed") {
@@ -150,9 +152,13 @@ const updatePaymentStatus = async (
 		}
 		await sendPaymentSucceededNotification(booking);
 		await sendBookingNotification(payment.bookingId, booking);
-		log.info(`Payment status updated to ${status} for intent ID ${paymentIntentId}.`);
+		log.info("payment_status_updated", `Payment status updated to ${status} for intent ID ${paymentIntentId}.`);
 	} catch (error) {
-		log.error(`Error updating payment status for intent ID ${paymentIntentId}`, error);
+		log.error(
+			"updating_payment_status_failed",
+			`Error updating payment status for intent ID ${paymentIntentId}`,
+			error,
+		);
 		throw error;
 	}
 };
@@ -185,7 +191,11 @@ const sendPaymentSucceededNotification = async (booking: InstanceType<typeof Boo
 		});
 		await storeNotification(title, message, userId, "BookingDetails", "payment_succeeded", bookingId);
 	} catch (error: any) {
-		log.error(`Error sending payment notification for booking ID ${bookingId}`, error);
+		log.error(
+			"sending_payment_notification_failed",
+			`Error sending payment notification for booking ID ${bookingId}`,
+			error,
+		);
 	}
 };
 
@@ -211,7 +221,10 @@ export const sendBookingNotification = async (bookingId: any, booking: InstanceT
 		});
 
 		if (providersInRadius.length === 0) {
-			log.info(`No providers available within 25km radius for booking ID ${bookingId}.`);
+			log.info(
+				"no_providers_available",
+				`No providers available within 25km radius for booking ID ${bookingId}.`,
+			);
 			return;
 		}
 
@@ -230,7 +243,11 @@ export const sendBookingNotification = async (bookingId: any, booking: InstanceT
 			await storeNotification(title, message, provider, "AcceptOrder", "booking_created", bookingId.toString());
 		}
 	} catch (error: any) {
-		log.error(`Error sending booking notification for booking ID ${bookingId} to available providers`, error);
+		log.error(
+			"sending_booking_notification_failed",
+			`Error sending booking notification for booking ID ${bookingId} to available providers`,
+			error,
+		);
 	}
 };
 
@@ -275,7 +292,7 @@ export const handleConnectedEvent = (event: Stripe.Event, delivery: WebhookDeliv
 			break;
 
 		default:
-			log.info(`Unhandled Stripe event type ${event.type}`);
+			log.info("stripe_event_unhandled", `Unhandled Stripe event type ${event.type}`);
 			delivery.finish("ignored");
 	}
 };
@@ -298,7 +315,7 @@ const updatePayoutStatus = async (
 			{ new: false },
 		);
 		if (!previous) {
-			log.info(`Payout ${payoutId} not found or already ${status}.`);
+			log.info("payout_not_found", `Payout ${payoutId} not found or already ${status}.`);
 			return `payout not found or already ${status}`;
 		}
 		if (status === "failed" || status === "cancelled") {
@@ -315,7 +332,7 @@ const updatePayoutStatus = async (
 			await sendPayoutPaidNotification(previous.userId.toString(), previous.amount);
 		}
 	} catch (error) {
-		log.error(`Error updating payout status for payout ID ${payoutId}`, error);
+		log.error("updating_payout_status_failed", `Error updating payout status for payout ID ${payoutId}`, error);
 		throw error;
 	}
 };
@@ -332,7 +349,11 @@ const sendPayoutPaidNotification = async (userId: string, amount: number) => {
 		});
 		await storeNotification(title, message, userId, "Earnings", "payout_paid");
 	} catch (error) {
-		log.error(`Error sending payout notification for user ID ${userId}`, error);
+		log.error(
+			"sending_payout_notification_failed",
+			`Error sending payout notification for user ID ${userId}`,
+			error,
+		);
 	}
 };
 
@@ -348,7 +369,7 @@ const updateRefundStatus = async (
 			$or: [{ refundId: refund.id }, { "refunds.refundId": refund.id }],
 		});
 		if (!payment) {
-			log.error(`Refund with ID ${refund.id} not found.`);
+			log.error("refund_not_found", `Refund with ID ${refund.id} not found.`);
 			return "refund not found";
 		}
 		const entry = payment.refunds?.find((item) => item.refundId === refund.id);
@@ -381,7 +402,7 @@ const updateRefundStatus = async (
 			return await notifyRefundSucceeded(payment, refund.amount / 100, refund.id);
 		}
 	} catch (error) {
-		log.error(`Error updating refund status for refund ID ${refund.id}`, error);
+		log.error("updating_refund_status_failed", `Error updating refund status for refund ID ${refund.id}`, error);
 		throw error;
 	}
 };
@@ -397,12 +418,12 @@ export const notifyRefundSucceeded = async (
 ): Promise<string | void> => {
 	const booking = await BookingModel.findOne({ _id: payment.bookingId });
 	if (!booking) {
-		log.error(`Booking with ID ${payment.bookingId} not found.`);
+		log.error("booking_not_found", `Booking with ID ${payment.bookingId} not found.`);
 		return "booking not found";
 	}
 	const user = await UserModel.findOne({ _id: booking.userId });
 	if (!user) {
-		log.error(`User with ID ${booking.userId} not found.`);
+		log.error("user_not_found", `User with ID ${booking.userId} not found.`);
 		return "user not found";
 	}
 	await sendRefundEmail(user, payment, amount, refundId);
@@ -431,7 +452,8 @@ const sendRefundEmail = async (
 		}),
 		userId: String(user._id),
 	});
-	if (result.status === "failed") log.error("Error sending refund email", { error: result.error });
+	if (result.status === "failed")
+		log.error("sending_refund_email_failed", "Error sending refund email", { error: result.error });
 };
 
 const sendRefundNotification = async (userId: string, booking: any, refundAmount: number) => {
@@ -450,6 +472,10 @@ const sendRefundNotification = async (userId: string, booking: any, refundAmount
 		});
 		await storeNotification(title, message, userId, "BookingDetails", "payment_refunded", bookingId);
 	} catch (error) {
-		log.error(`Error sending refund notification for booking ID ${bookingId}`, error);
+		log.error(
+			"sending_refund_notification_failed",
+			`Error sending refund notification for booking ID ${bookingId}`,
+			error,
+		);
 	}
 };

@@ -377,7 +377,7 @@ export const handleRefundPayment = async (req: Request, res: Response) => {
 					{ $set: { "refunds.$.status": "failed" } },
 				);
 			}
-			log.error(`Admin refund of payment ${String(payment._id)} failed`, error);
+			log.error("admin_refund_failed", `Admin refund of payment ${String(payment._id)} failed`, error);
 			await recordAudit(
 				{
 					action: "payments.refunded",

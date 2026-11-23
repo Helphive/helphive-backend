@@ -63,7 +63,7 @@ for (const name of [
 	"COMETCHAT_WEBHOOK_PASSWORD",
 	"CHAT_TOKEN_ENCRYPTION_KEY",
 ]) {
-	if (!process.env[name]) log.warn(`${name} is not set; see the notes in .env.example.`);
+	if (!process.env[name]) log.warn("config_missing", `${name} is not set; see the notes in .env.example.`);
 }
 
 // Cloud Run sits behind one Google front end hop, which appends the real client address to X-Forwarded-For.
@@ -83,7 +83,7 @@ assertOriginAuthConfig();
 app.use(originAuth);
 
 const server = app.listen(PORT, () => {
-	log.info(`Server is running at ${SERVER_BASE_URL}`);
+	log.info("startup", `Server is running at ${SERVER_BASE_URL}`);
 });
 
 configureIndexing();
@@ -198,7 +198,7 @@ app.all("*", (req: Request, res: Response) => {
 app.use(errorHandler);
 
 mongoose.connection.once("open", () => {
-	log.info("Connected to MongoDB");
+	log.info("db_connected", "Connected to MongoDB");
 	reportIndexBuilds();
 });
 

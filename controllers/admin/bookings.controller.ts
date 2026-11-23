@@ -344,7 +344,7 @@ const safeRefund = async (bookingId: string) => {
 	try {
 		return await refundPaymentIfPaid(bookingId);
 	} catch (error: any) {
-		log.error(`Refund after admin cancellation of ${bookingId} failed`, error);
+		log.error("admin_cancel_refund_failed", `Refund after admin cancellation of ${bookingId} failed`, error);
 		return {
 			outcome: "error" as const,
 			message: error?.message ? String(error.message).slice(0, 200) : "Stripe error",
@@ -434,7 +434,11 @@ const notifyRelease = async (booking: any, providerId: string) => {
 			});
 			await storeNotification(title, message, id, screen, "general", bookingId);
 		} catch (error) {
-			log.error(`Error sending release notification for booking ${bookingId}`, error);
+			log.error(
+				"sending_release_notification_failed",
+				`Error sending release notification for booking ${bookingId}`,
+				error,
+			);
 		}
 	}
 };

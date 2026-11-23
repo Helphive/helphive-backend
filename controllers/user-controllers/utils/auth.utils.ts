@@ -25,7 +25,7 @@ export const refundPaymentIfPaid = async (bookingId: string): Promise<RefundIfPa
 	if (hasRefund(payment) || payment.refunds?.length) return { outcome: "already_refunded", paymentId };
 	const paymentIntent = await stripe.paymentIntents.retrieve(payment.paymentIntentId);
 	if (paymentIntent.status !== "succeeded") {
-		log.info(`Payment intent ${payment.paymentIntentId} was not paid, no refund needed.`);
+		log.info("payment_intent_unpaid", `Payment intent ${payment.paymentIntentId} was not paid, no refund needed.`);
 		return { outcome: "not_paid", paymentId };
 	}
 	const refund = await stripe.refunds.create(
@@ -75,7 +75,11 @@ export const sendBookingCompletedNotification = async (userId: string, providerI
 			await storeNotification(title, message, id, screen, "booking_completed", bookingId);
 		}
 	} catch (error: any) {
-		log.error(`Error sending booking completed notification for booking ID ${bookingId}`, error.response);
+		log.error(
+			"sending_booking_completed_failed",
+			`Error sending booking completed notification for booking ID ${bookingId}`,
+			error.response,
+		);
 	}
 };
 
@@ -109,7 +113,11 @@ export const sendBookingCancelledNotification = async (userId: string, providerI
 			await storeNotification(title, message, id, screen, "booking_cancelled", bookingId);
 		}
 	} catch (error: any) {
-		log.error(`Error sending booking cancellation notification for booking ID ${bookingId}`, error.response);
+		log.error(
+			"sending_booking_cancellation_failed",
+			`Error sending booking cancellation notification for booking ID ${bookingId}`,
+			error.response,
+		);
 	}
 };
 

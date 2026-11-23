@@ -106,7 +106,9 @@ export const releaseHold = async (
 export const recordBlocked = (userId: unknown, what: "payouts" | "earnings") =>
 	RiskHoldModel.updateMany({ userId, active: true }, { $inc: { [`blocked.${what}`]: 1 } })
 		.exec()
-		.catch((error) => log.error("Could not count a blocked payout or earning", error));
+		.catch((error) =>
+			log.error("count_blocked_payout_failed", "Could not count a blocked payout or earning", error),
+		);
 
 /** At most this many kept-back earnings are rescheduled per release (the rest are released by the overview's attention list). */
 export const MAX_RESCHEDULE = 100;
@@ -132,12 +134,16 @@ export const rescheduleHeldEarnings = async (providerId: mongoose.Types.ObjectId
 				await createGoogleCloudTaskPaymentTrigger(String(earning.bookingId), new Date(Date.now() + 5000));
 				scheduled++;
 			} catch (error) {
-				log.error(`Could not reschedule the earning release for booking ${earning.bookingId}`, error);
+				log.error(
+					"reschedule_earning_release_failed",
+					`Could not reschedule the earning release for booking ${earning.bookingId}`,
+					error,
+				);
 			}
 		}
 		return scheduled;
 	} catch (error) {
-		log.error("Could not reschedule held earnings", error);
+		log.error("reschedule_held_earnings_failed", "Could not reschedule held earnings", error);
 		return 0;
 	}
 };

@@ -30,7 +30,10 @@ export const clientPassGuard = (req: Request, res: Response, next: NextFunction)
 	const secret = passSecret();
 	if (!secret && !missingSecretLogged) {
 		missingSecretLogged = true;
-		log.error("Client attestation: CLIENT_PASS_SECRET is missing or shorter than 32 characters; not enforcing");
+		log.error(
+			"client_pass_secret_missing",
+			"Client attestation: CLIENT_PASS_SECRET is missing or shorter than 32 characters; not enforcing",
+		);
 	}
 	// Without a usable secret nothing can be verified, so even enforce mode only observes.
 	const enforcing = mode === "enforce" && !!secret;
@@ -42,7 +45,7 @@ export const clientPassGuard = (req: Request, res: Response, next: NextFunction)
 	res.locals.clientPass = result;
 	if (result.outcome === "valid") return next();
 
-	log.warn("Client pass not valid", {
+	log.warn("client_pass_invalid", "Client pass not valid", {
 		outcome: result.outcome,
 		appPlatform: req.get("x-app-platform"),
 		method: req.method,

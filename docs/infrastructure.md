@@ -136,6 +136,29 @@ survives deploys. Its plain variable `ORIGIN` (the Cloud Run URL) is in `edge/ap
   `https://api.helphive.himaiz.com` (`config/allowedOrigins.ts`). Local origins work only when `NODE_ENV=development`.
   Requests without an Origin (the app, webhooks, Cloud Tasks) aren't browser calls and pass.
 
+## Logging
+
+Both the API and the edge Worker follow the shared logging standard (`LOGGING.md` in the private repo
+`maiznadeem/OracleVMOps`): one JSON object per line on stdout with `time`, `level`, `app` (`helphive`), `part`
+(`api` or `edge`), `event`, `ray` and `msg`. The API adds `severity` and the trace fields Cloud Logging reads.
+
+- **API (`lib/logger.ts`):** every call is `log.<level>(event, msg, ...)` with a fixed snake_case event per call site
+  (`login_failed`, `stripe_webhook_signature_invalid`, `exception` for unexpected errors, `startup`, `db_connected`).
+  Each finished request writes one `request` line with `method`, the matched `route` pattern (never the raw URL or
+  query), `status`, `ms` and the user or admin id. 5xx and exceptions log at error; Cloud Run probes, CORS preflights
+  and direct calls refused by the origin check (`origin_refused`) log at debug. The provider WebSocket logs
+  `ws_connected` and `ws_disconnected` with the user id, never message contents. `LOG_LEVEL` (default `info`) sets the
+  lowest level written.
+- **Edge (`edge/api/index.js`):** one `request` line per call with the first path segment as `route` (`/auth/*`), or
+  `exception` when the origin is unreachable. Workers Logs keep only that line: Cloudflare's own invocation logs are
+  off and query strings are redacted (`wrangler.toml`).
+- **One id across both:** the edge forwards the visitor's `CF-Ray` as `X-CF-Ray` (after deleting any the visitor
+  sent), because Cloudflare gives the Worker's own call to Cloud Run a new `CF-Ray`. The API logs `X-CF-Ray` as `ray`,
+  falling back to `CF-Ray`. Filter on one ray to see a request at the edge and at the API.
+- **Never logged:** request or response bodies, cookies, tokens, passwords, emails (masked if they slip into a
+  message) or phone numbers. Errors keep their name, code and stack.
+- The admin console's log viewer reads these lines (`msg`, `event`, `ray`, request fields) as well as older ones.
+
 ## Secrets (names and places only)
 
 - **`helphive-secrets`** in Secret Manager: one JSON object, given to Cloud Run as the env var `APP_SECRETS` and

@@ -33,7 +33,9 @@ export const warnThrottled = (topic: string, error: unknown) => {
 	const now = Date.now();
 	if (now - (lastWarning.get(topic) ?? 0) < 10 * 60_000) return;
 	lastWarning.set(topic, now);
-	log.warn(`Observability: ${topic}`, { reason: error instanceof Error ? error.message : String(error) });
+	log.warn("observability_warning", `Observability: ${topic}`, {
+		reason: error instanceof Error ? error.message : String(error),
+	});
 };
 
 const actorIds = (context: RequestContext | undefined) => ({
@@ -56,11 +58,11 @@ export const captureError = (input: Omit<CaptureInput, "revision"> & { revision?
 };
 
 const onErrorLog = (entry: LogEntry) => {
-	if (entry.message.startsWith("Observability")) return;
+	if (entry.event.startsWith("observability") || entry.msg.startsWith("Observability")) return;
 	const context = getRequestContext();
 	const error = entry.error
-		? { ...entry.error, logMessage: entry.message }
-		: { message: entry.message, logMessage: entry.message };
+		? { ...entry.error, logMessage: entry.msg }
+		: { message: entry.msg, logMessage: entry.msg };
 	if (context && !finished.has(context)) {
 		if (!loggedErrors.has(context)) loggedErrors.set(context, error);
 		return;
@@ -69,7 +71,7 @@ const onErrorLog = (entry: LogEntry) => {
 	captureError({
 		source: "server",
 		type: error.name ?? null,
-		message: entry.error ? `${entry.message}: ${error.message}` : entry.message,
+		message: entry.error ? `${entry.msg}: ${error.message}` : entry.msg,
 		stack: error.stack ?? null,
 		route: context?.route ?? "(background)",
 		requestId: context?.requestId ?? null,

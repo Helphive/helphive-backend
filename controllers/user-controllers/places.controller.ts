@@ -13,11 +13,18 @@ const userKey = (req: Request) => req.context?.actor?.id ?? String(req.user ?? "
 const answer = (res: Response, error: unknown, what: string) => {
 	if (error instanceof PlacesError) {
 		if (error.code !== "places_not_configured" && error.code !== "places_not_found") {
-			log.warn(`Address lookup failed (${what})`, { code: error.code, upstream: error.upstream ?? null });
+			log.warn("address_lookup_failed", `Address lookup failed (${what})`, {
+				code: error.code,
+				upstream: error.upstream ?? null,
+			});
 		}
 		return res.status(error.status).json(error.toBody());
 	}
-	log.error(`Address lookup error (${what})`, error instanceof Error ? error.name : "unknown");
+	log.error(
+		"address_lookup_error",
+		`Address lookup error (${what})`,
+		error instanceof Error ? error.name : "unknown",
+	);
 	return res.status(502).json(new PlacesError("places_unavailable").toBody());
 };
 

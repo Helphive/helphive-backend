@@ -281,7 +281,9 @@ export const handleReplayWebhook = async (req: Request, res: Response) => {
 						},
 					)
 						.exec()
-						.catch((e) => log.error("Could not record a webhook replay outcome", e));
+						.catch((e) =>
+							log.error("record_webhook_replay_failed", "Could not record a webhook replay outcome", e),
+						);
 					resolve({ outcome: result, error, note: detail.note ?? null });
 				},
 			};
@@ -1075,7 +1077,9 @@ export const handleClientError = async (req: Request, res: Response) => {
 		res.status(202).json({ accepted: true, id: fingerprint });
 	} catch (error) {
 		if (error instanceof ClientReportError) return res.status(400).json({ message: error.message });
-		log.warn("Observability: could not take a client error report", { reason: (error as Error)?.message });
+		log.warn("client_error_report_failed", "Observability: could not take a client error report", {
+			reason: (error as Error)?.message,
+		});
 		res.status(202).json({ accepted: false });
 	}
 };

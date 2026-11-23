@@ -23,7 +23,7 @@ export const answerError = (res: Response, error: unknown, what: string) => {
 	if (error instanceof ListQueryError) return res.status(400).json({ message: error.message, field: error.field });
 	if (error instanceof SearchQueryError) return res.status(400).json({ message: error.message, field: "q" });
 	if (error instanceof TimeZoneError) return res.status(400).json({ message: error.message, field: "tz" });
-	log.error(`Error ${what}`, error);
+	log.error("exception", `Error ${what}`, error);
 	return res.status(500).json({ message: "Internal server error" });
 };
 

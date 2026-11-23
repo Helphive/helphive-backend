@@ -121,7 +121,7 @@ export const handleGoogleCloudTasksEarningComplete = async (req: Request, res: R
 			transferId: transfer.id,
 		});
 	} catch (error: any) {
-		log.error("Error processing earning payout", error);
+		log.error("processing_earning_payout_failed", "Error processing earning payout", error);
 
 		if (error.type === "StripeCardError") {
 			return res.status(400).json({ message: error.message });
@@ -144,7 +144,11 @@ const sendPaymentNotification = async (providerId: string, amount: number, booki
 		});
 		await storeNotification(title, message, providerId, "Earnings", "payment_succeeded", bookingId);
 	} catch (error) {
-		log.error(`Error sending payment notification for booking ID ${bookingId}`, error);
+		log.error(
+			"sending_payment_notification_failed",
+			`Error sending payment notification for booking ID ${bookingId}`,
+			error,
+		);
 	}
 };
 
@@ -189,7 +193,7 @@ export const handleGoogleCloudTasksBookingExpired = async (req: Request, res: Re
 
 		return res.status(200).json({ message: "Booking expired" });
 	} catch (error) {
-		log.error("Error expiring booking", error);
+		log.error("expiring_booking_failed", "Error expiring booking", error);
 		return res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -207,7 +211,11 @@ const sendBookingExpiredNotification = async (userId: string, booking: any) => {
 		});
 		await storeNotification(title, message, userId, "BookingDetails", "booking_expired", bookingId);
 	} catch (error) {
-		log.error(`Error sending booking expired notification for booking ID ${bookingId}`, error);
+		log.error(
+			"sending_booking_expired_failed",
+			`Error sending booking expired notification for booking ID ${bookingId}`,
+			error,
+		);
 	}
 };
 
@@ -279,7 +287,7 @@ export const handleGoogleCloudTasksBookingNoShow = async (req: Request, res: Res
 		try {
 			await syncBookingChat(booking);
 		} catch (error) {
-			log.error("Error re-deciding the chat after a not-started cancellation", error);
+			log.error("re_deciding_chat_failed", "Error re-deciding the chat after a not-started cancellation", error);
 		}
 
 		// Last, so a failure here answers 500 and the retry finds the booking cancelled and only requests the refund.
@@ -292,7 +300,7 @@ export const handleGoogleCloudTasksBookingNoShow = async (req: Request, res: Res
 					: "Booking cancelled (not started); nothing to refund",
 		});
 	} catch (error) {
-		log.error("Error handling the no-show check", error);
+		log.error("handling_no_show_failed", "Error handling the no-show check", error);
 		return res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -311,7 +319,7 @@ export const handleGoogleCloudTasksChatWindow = async (req: Request, res: Respon
 		if (!result) return res.status(500).json({ message: "Chat relationship could not be checked" });
 		return res.status(200).json({ message: result.state.allowed ? "Chat still open" : "Chat closed" });
 	} catch (error) {
-		log.error("Error checking a chat window", error);
+		log.error("checking_chat_window_failed", "Error checking a chat window", error);
 		return res.status(500).json({ message: "Internal server error" });
 	}
 };

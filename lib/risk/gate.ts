@@ -68,7 +68,11 @@ export const getListIndex = async (): Promise<ListCache> => {
 	loading ??= load()
 		.then((fresh) => (cache = fresh))
 		.catch((error) => {
-			log.error("Risk: could not load the block and allow lists; requests are let through", error);
+			log.error(
+				"risk_lists_load_failed",
+				"Risk: could not load the block and allow lists; requests are let through",
+				error,
+			);
 			cache = { ...cache, at: Date.now() - LIST_CACHE_TTL_MS + 10_000 }; // Retry in 10 s.
 			return cache;
 		})
@@ -86,7 +90,7 @@ const countMatches = (ids: string[]) => {
 	if (!ids.length) return;
 	RiskListModel.updateMany({ _id: { $in: ids } }, { $inc: { matches: 1 }, $set: { lastMatchedAt: new Date() } })
 		.exec()
-		.catch((error) => log.error("Risk: could not count list matches", error));
+		.catch((error) => log.error("risk_list_count_failed", "Risk: could not count list matches", error));
 };
 
 /**
@@ -129,7 +133,7 @@ export const riskListGate = (point: GatePoint) => async (req: Request, res: Resp
 		);
 		return res.status(blockedStatus(point)).json(BLOCKED_BODY);
 	} catch (error) {
-		log.error(`Risk: the ${point} list check failed; the request was let through`, error);
+		log.error("risk_list_check_failed", `Risk: the ${point} list check failed; the request was let through`, error);
 		return next();
 	}
 };

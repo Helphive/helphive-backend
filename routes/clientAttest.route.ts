@@ -76,7 +76,7 @@ export const createClientAttestHandler =
 			} else {
 				const siteKey = recaptchaSiteKey();
 				if (!siteKey) {
-					log.error("Client attestation: RECAPTCHA_SITE_KEY is not set");
+					log.error("recaptcha_site_key_missing", "Client attestation: RECAPTCHA_SITE_KEY is not set");
 					return unavailable(res);
 				}
 				try {
@@ -93,15 +93,19 @@ export const createClientAttestHandler =
 				}
 			}
 		} catch (error) {
-			log.error("Client attestation: Google call failed", error);
+			log.error("attestation_google_failed", "Client attestation: Google call failed", error);
 			return unavailable(res);
 		}
 
-		log[verdict.ok ? "info" : "warn"](`Client attestation ${verdict.ok ? "accepted" : "refused"}`, {
-			platform,
-			method: debug ? "debug" : proofs[0],
-			...verdict.summary,
-		});
+		log[verdict.ok ? "info" : "warn"](
+			verdict.ok ? "attestation_accepted" : "attestation_refused",
+			`Client attestation ${verdict.ok ? "accepted" : "refused"}`,
+			{
+				platform,
+				method: debug ? "debug" : proofs[0],
+				...verdict.summary,
+			},
+		);
 		if (!verdict.ok) return refuse(res, verdict.reason);
 		const ttlSeconds = passTtlSeconds(platform);
 		return res.json(signPass(secret, { platform, deviceId, debug, ttlSeconds }, now()));

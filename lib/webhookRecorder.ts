@@ -74,7 +74,11 @@ export const beginStripeDelivery = async (
 		recordId = previous ? previous._id : newId;
 		if (previous && (previous.outcome === "processed" || previous.outcome === "ignored")) shouldProcess = false;
 	} catch (error) {
-		log.error("Could not record a Stripe webhook delivery; processing it anyway", error);
+		log.error(
+			"record_stripe_webhook_failed",
+			"Could not record a Stripe webhook delivery; processing it anyway",
+			error,
+		);
 	} finally {
 		if (timer) clearTimeout(timer);
 	}
@@ -97,7 +101,9 @@ export const beginStripeDelivery = async (
 				},
 			)
 				.exec()
-				.catch((error) => log.error("Could not record a Stripe webhook outcome", error));
+				.catch((error) =>
+					log.error("record_stripe_webhook_failed", "Could not record a Stripe webhook outcome", error),
+				);
 		},
 	};
 };
@@ -167,7 +173,7 @@ export const recordTaskRun = (task: string) => (req: Request, res: Response, nex
 			note: outcome === "failed" ? null : message,
 			error: outcome === "failed" ? message : null,
 			requestId: req.context?.requestId ?? null,
-		}).catch((error) => log.error("Could not record a Cloud Tasks run", error));
+		}).catch((error) => log.error("record_cloud_tasks_failed", "Could not record a Cloud Tasks run", error));
 	});
 	next();
 };

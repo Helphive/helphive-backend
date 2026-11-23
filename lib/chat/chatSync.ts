@@ -129,7 +129,9 @@ export const syncChatPair = async (
 			} catch (error) {
 				synced = false;
 				syncError = errorCode(error);
-				log.warn("Could not update the chat relationship in CometChat", { code: syncError });
+				log.warn("update_chat_relationship_failed", "Could not update the chat relationship in CometChat", {
+					code: syncError,
+				});
 			}
 		} else {
 			synced = false;
@@ -170,12 +172,15 @@ export const syncChatPair = async (
 		const untilChanged = (previous?.until?.getTime() ?? null) !== (state.until?.getTime() ?? null);
 		if (options.scheduleCheck !== false && state.allowed && state.until && untilChanged && state.bookingIds[0]) {
 			await scheduleChatWindowCheck(state.bookingIds[0], state.until).catch((error) =>
-				log.warn("Could not schedule the chat window check", { code: errorCode(error) }),
+				log.warn("schedule_chat_window_failed", "Could not schedule the chat window check", {
+					code: errorCode(error),
+				}),
 			);
 		}
 		return { state, changed, synced };
 	} catch (error) {
-		if (!(error instanceof ChatNotConfiguredError)) log.error("Could not sync a chat relationship", error);
+		if (!(error instanceof ChatNotConfiguredError))
+			log.error("sync_chat_relationship_failed", "Could not sync a chat relationship", error);
 		return null;
 	}
 };
@@ -199,7 +204,7 @@ export const sweepExpiredLinks = async (userId: Id, now = new Date()) => {
 			.exec();
 		for (const link of due) await syncChatPair(link.customerId, link.providerId, { now });
 	} catch (error) {
-		log.error("Could not sweep expired chat relationships", error);
+		log.error("sweep_expired_chat_failed", "Could not sweep expired chat relationships", error);
 	}
 };
 

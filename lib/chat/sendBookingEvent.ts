@@ -83,7 +83,7 @@ export const sendBookingEvent = async (
 		try {
 			await client.sendText(from, to, BOOKING_EVENT_TEXT[event], bookingEventMetadata(event, booking._id as any));
 		} catch (error) {
-			log.error("Could not send a booking event to the chat", {
+			log.error("send_booking_event_failed", "Could not send a booking event to the chat", {
 				event,
 				status: error instanceof CometChatError ? error.status : null,
 				code: error instanceof CometChatError ? error.code : error instanceof Error ? error.name : "unknown",
@@ -92,7 +92,7 @@ export const sendBookingEvent = async (
 		}
 		return "sent";
 	} catch (error) {
-		log.error("Could not send a booking event to the chat", {
+		log.error("send_booking_event_failed", "Could not send a booking event to the chat", {
 			event,
 			code: error instanceof Error ? error.name : "unknown",
 		});

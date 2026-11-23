@@ -13,7 +13,10 @@ const cometChatRoute = express.Router();
 export const verifyCometChatWebhook = (req: Request, res: Response, next: NextFunction) => {
 	const { webhook } = chatConfig();
 	if (!webhook.configured) {
-		log.error("COMETCHAT_WEBHOOK_USERNAME / COMETCHAT_WEBHOOK_PASSWORD are not set; refusing CometChat webhooks.");
+		log.error(
+			"cometchat_webhook_auth_missing",
+			"COMETCHAT_WEBHOOK_USERNAME / COMETCHAT_WEBHOOK_PASSWORD are not set; refusing CometChat webhooks.",
+		);
 		return res.status(503).json({ message: "Webhook not configured" });
 	}
 	if (!verifyBasicAuth(req.headers.authorization, webhook.username, webhook.password)) {

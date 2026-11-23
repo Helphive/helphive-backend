@@ -19,7 +19,11 @@ export const sendBookingStartedNotification = async (userId: string, booking: an
 		});
 		await storeNotification(title, message, userId, "BookingDetails", "booking_start_requested", bookingId);
 	} catch (error: any) {
-		log.error(`Error sending booking start request notification for booking ID ${bookingId}`, error);
+		log.error(
+			"sending_booking_start_failed",
+			`Error sending booking start request notification for booking ID ${bookingId}`,
+			error,
+		);
 	}
 };
 
@@ -37,7 +41,11 @@ export const sendBookingAcceptedNotification = async (userId: string, providerNa
 		});
 		await storeNotification(title, message, userId, "BookingDetails", "booking_accepted", bookingId);
 	} catch (error: any) {
-		log.error(`Error sending booking accepted notification for booking ID ${bookingId}`, error);
+		log.error(
+			"sending_booking_accepted_failed",
+			`Error sending booking accepted notification for booking ID ${bookingId}`,
+			error,
+		);
 	}
 };
 
@@ -60,7 +68,7 @@ export const sendProviderOnlineNotification = async (providerId: string) => {
 			web_push_topic: "provider-online",
 		});
 	} catch (error) {
-		log.error("Error sending the provider online notification", error);
+		log.error("sending_provider_online_failed", "Error sending the provider online notification", error);
 	}
 };
 

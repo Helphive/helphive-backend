@@ -40,7 +40,7 @@ export const originAllowedFor = (path: string, origin: string | undefined) =>
 const corsOptionsDelegate: CorsOptionsDelegate<Request> = (req, callback) => {
 	const origin = req.headers.origin;
 	if (originAllowedFor(req.path, origin)) return callback(null, { ...baseOptions, origin: true });
-	log.warn("Blocked by CORS", { origin, path: req.path });
+	log.warn("cors_blocked", "Blocked by CORS", { origin, path: req.path });
 	callback(new CorsError("Not allowed by CORS"));
 };
 

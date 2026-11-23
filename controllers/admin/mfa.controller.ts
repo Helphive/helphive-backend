@@ -66,7 +66,7 @@ export const handleEnrollMfa = async (req: Request, res: Response) => {
 			expiresAt: new Date(Date.now() + ADMIN_MFA_ENROLLMENT_TTL_MS).toISOString(),
 		});
 	} catch (error) {
-		log.error("Error starting two-step enrolment", error);
+		log.error("starting_two_step_failed", "Error starting two-step enrolment", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -111,7 +111,7 @@ export const handleConfirmMfa = async (req: Request, res: Response) => {
 		);
 		res.json({ enabled: true, recoveryCodes: codes });
 	} catch (error) {
-		log.error("Error confirming two-step enrolment", error);
+		log.error("confirming_two_step_failed", "Error confirming two-step enrolment", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -149,7 +149,7 @@ export const handleDisableMfa = async (req: Request, res: Response) => {
 		);
 		res.json({ enabled: false });
 	} catch (error) {
-		log.error("Error turning off two-step sign-in", error);
+		log.error("two_step_disable_failed", "Error turning off two-step sign-in", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -177,7 +177,7 @@ export const handleRegenerateRecoveryCodes = async (req: Request, res: Response)
 		);
 		res.json({ recoveryCodes: codes });
 	} catch (error) {
-		log.error("Error replacing recovery codes", error);
+		log.error("replacing_recovery_codes_failed", "Error replacing recovery codes", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };

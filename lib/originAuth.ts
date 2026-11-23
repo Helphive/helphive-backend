@@ -56,8 +56,10 @@ export const originAuth = (req: Request, res: Response, next: NextFunction) => {
 		return next();
 	}
 	if (!check.enforce) {
-		log.warn("Origin auth missing (log only)", { method: req.method, path: req.path });
+		log.warn("origin_auth_missing", "Origin auth missing (log only)", { method: req.method, path: req.path });
 		return next();
 	}
+	// Runs before the request logger, so refused calls get their own line (debug: scanners hit run.app all day).
+	log.debug("origin_refused", "Direct request without the edge secret refused", { method: req.method });
 	res.status(403).json({ message: "Forbidden" });
 };

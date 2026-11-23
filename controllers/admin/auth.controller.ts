@@ -136,7 +136,7 @@ export const handleLogin = async (req: Request, res: Response) => {
 
 		await completeSignIn(req, res, admin, false);
 	} catch (error) {
-		log.error("Error logging in admin", error);
+		log.error("admin_login_failed", "Error logging in admin", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -188,7 +188,7 @@ export const handleLoginMfa = async (req: Request, res: Response) => {
 		}
 		await completeSignIn(req, res, admin, true);
 	} catch (error) {
-		log.error("Error completing admin two-step sign-in", error);
+		log.error("admin_two_step_login_failed", "Error completing admin two-step sign-in", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -213,7 +213,7 @@ export const handleRefresh = async (req: Request, res: Response) => {
 					},
 					req,
 				);
-				log.warn("Admin refresh token reuse detected; session revoked", {
+				log.warn("admin_refresh_token_reuse", "Admin refresh token reuse detected; session revoked", {
 					sessionId: String(outcome.session._id),
 				});
 			}
@@ -223,7 +223,7 @@ export const handleRefresh = async (req: Request, res: Response) => {
 		const { admin, access, session } = outcome;
 		res.json({ admin, accessToken: access.token, ...sessionResponseFields(admin, access, session) });
 	} catch (error) {
-		log.error("Error refreshing admin session", error);
+		log.error("refreshing_admin_session_failed", "Error refreshing admin session", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -276,7 +276,7 @@ export const handleLogout = async (req: Request, res: Response) => {
 		}
 		return res.status(401).json({ message: "No token, authorization denied" });
 	} catch (error) {
-		log.error("Error logging out admin", error);
+		log.error("logging_out_admin_failed", "Error logging out admin", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -298,7 +298,7 @@ export const handleLogoutAll = async (req: Request, res: Response) => {
 		);
 		res.sendStatus(204);
 	} catch (error) {
-		log.error("Error signing admin out everywhere", error);
+		log.error("admin_sign_out_everywhere_failed", "Error signing admin out everywhere", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -317,7 +317,7 @@ export const handleGetAccount = async (req: Request, res: Response) => {
 			demo: role === "demo",
 		});
 	} catch (error) {
-		log.error("Error getting admin account", error);
+		log.error("getting_admin_account_failed", "Error getting admin account", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -344,7 +344,7 @@ export const handleListSessions = async (req: Request, res: Response) => {
 			.exec();
 		res.json({ items: sessions.map((session) => publicSession(session, req.adminSessionId)) });
 	} catch (error) {
-		log.error("Error listing admin sessions", error);
+		log.error("listing_admin_sessions_failed", "Error listing admin sessions", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -369,7 +369,7 @@ export const handleRevokeSession = async (req: Request, res: Response) => {
 		);
 		res.sendStatus(204);
 	} catch (error) {
-		log.error("Error revoking admin session", error);
+		log.error("revoking_admin_session_failed", "Error revoking admin session", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };
@@ -433,7 +433,7 @@ export const handleChangePassword = async (req: Request, res: Response) => {
 			...sessionResponseFields(updated, access, session),
 		});
 	} catch (error) {
-		log.error("Error changing admin password", error);
+		log.error("changing_admin_password_failed", "Error changing admin password", error);
 		res.status(500).json({ message: "Internal server error" });
 	}
 };

@@ -4,15 +4,17 @@ import assert from "node:assert/strict";
 import {
 	buildLogEntry,
 	buildRequestLogEntry,
-	pathOnly,
+	log,
+	requestSeverity,
 	serializeError,
 	setLogSink,
-	severityForStatus,
+	writeEntry,
 } from "../lib/logger";
 import {
 	buildRequestContext,
 	getRequestContext,
 	parseClientHeaders,
+	parseRay,
 	parseTraceHeader,
 	resolveRequestId,
 } from "../lib/requestContext";
@@ -20,6 +22,7 @@ import { requestContext } from "../middleware/requestContext";
 import { parseDuration } from "../lib/duration";
 
 const TRACE = "105445aa7843bc8bf206b12000100000";
+const RAY = "8a1b2c3d4e5f6a7b-LHR";
 
 test("client headers: valid values kept (platform lower-cased), anything odd dropped rather than rejected", () => {
 	assert.deepEqual(
@@ -59,10 +62,23 @@ test("trace: X-Cloud-Trace-Context becomes the Cloud Logging trace field", () =>
 	assert.deepEqual(parseTraceHeader(undefined, "helphive"), {});
 });
 
-test("log entry: severity, message, context fields, trace, error reduced to name/message/code/stack, emails masked", () => {
+test("ray: X-CF-Ray from the edge Worker, else CF-Ray; anything malformed is dropped", () => {
+	assert.equal(parseRay({ "x-cf-ray": RAY, "cf-ray": "1111111111111111-IAD" }), RAY);
+	assert.equal(parseRay({ "cf-ray": RAY }), RAY);
+	assert.equal(parseRay({ "x-cf-ray": "8a1b2c3d4e5f6a7b" }), "8a1b2c3d4e5f6a7b");
+	assert.equal(parseRay({ "x-cf-ray": "not a ray {}" }), undefined);
+	assert.equal(parseRay({}), undefined);
+});
+
+test("log entry: standard fields in order, context, trace, error reduced to name/message/code/stack, emails masked", () => {
 	const context = {
 		...buildRequestContext(
-			{ "x-cloud-trace-context": `${TRACE}/7;o=1`, "x-app-platform": "android", "x-app-version": "1.0" },
+			{
+				"x-cloud-trace-context": `${TRACE}/7;o=1`,
+				"x-app-platform": "android",
+				"x-app-version": "1.0",
+				"x-cf-ray": RAY,
+			},
 			"1.2.3.4",
 			"helphive",
 		),
@@ -75,13 +91,30 @@ test("log entry: severity, message, context fields, trace, error reduced to name
 	});
 	const entry = buildLogEntry(
 		"ERROR",
+		"stripe_call_failed",
 		"Could not reach jane.doe@example.com",
 		[error, { token: "t", status: 502 }],
 		context,
 		new Date("2026-11-19T00:00:00Z"),
 	);
+	assert.deepEqual(Object.keys(entry).slice(0, 8), [
+		"time",
+		"level",
+		"app",
+		"part",
+		"event",
+		"ray",
+		"msg",
+		"severity",
+	]);
+	assert.equal(entry.level, "error");
 	assert.equal(entry.severity, "ERROR");
-	assert.equal(entry.message, "Could not reach j***@example.com");
+	assert.equal(entry.app, "helphive");
+	assert.equal(entry.part, "api");
+	assert.equal(entry.event, "stripe_call_failed");
+	assert.equal(entry.ray, RAY);
+	assert.equal(entry.msg, "Could not reach j***@example.com");
+	assert.equal("message" in entry, false);
 	assert.equal(entry.time, "2026-11-19T00:00:00.000Z");
 	assert.equal(entry.requestId, context.requestId);
 	assert.equal(entry.route, "/auth/login");
@@ -95,47 +128,85 @@ test("log entry: severity, message, context fields, trace, error reduced to name
 	assert.ok(entry.error?.stack?.includes("Error"));
 	assert.equal(JSON.stringify(entry).includes("Basic secret"), false, "axios-style config is never logged");
 	assert.deepEqual(entry.details, { token: "[redacted]", status: 502 });
-	const admin = buildLogEntry("INFO", "x", [], { requestId: "r", actor: { type: "admin", id: "a1" } });
+	const admin = buildLogEntry("INFO", "x", "x", [], { requestId: "r", actor: { type: "admin", id: "a1" } });
 	assert.equal(admin.adminId, "a1");
+	assert.equal(admin.level, "info");
+	assert.equal(admin.ray, undefined, "no ray outside Cloudflare");
+	assert.equal(buildLogEntry("WARNING", "x", "x", [], undefined).level, "warn");
+	assert.equal(buildLogEntry("CRITICAL", "x", "x", [], undefined).level, "error");
 	assert.equal(admin.userId, undefined);
 	assert.deepEqual(serializeError("plain"), { message: "plain" });
 });
 
-test("request log entry: Cloud Logging httpRequest shape, path without query string, status-based severity", () => {
+test("request line: route pattern (never the raw URL), status, ms, user id; levels by status and path", () => {
 	const context = {
-		...buildRequestContext({ "user-agent": "Mozilla/5.0" }, "203.0.113.7", "helphive"),
+		...buildRequestContext({ "user-agent": "Mozilla/5.0", "x-cf-ray": RAY }, "203.0.113.7", "helphive"),
 		route: "/auth/verify-email",
+		actor: { type: "user" as const, id: "64b7f0c2a1b2c3d4e5f60718" },
 	};
 	const entry = buildRequestLogEntry(
-		{
-			method: "GET",
-			originalUrl: "/auth/verify-email?token=SECRET",
-			status: 400,
-			latencyMs: 42.4,
-			responseSize: 51,
-			protocol: "HTTP/1.1",
-		},
+		{ method: "GET", path: "/auth/verify-email/SECRET", status: 400, latencyMs: 42.4 },
 		context,
+		new Date("2026-11-23T00:00:00Z"),
 	);
-	assert.equal(entry.severity, "WARNING");
-	assert.equal(entry.message, "GET /auth/verify-email 400 42ms");
-	assert.deepEqual(entry.httpRequest, {
-		requestMethod: "GET",
-		requestUrl: "/auth/verify-email",
-		status: 400,
-		latency: "0.042s",
-		remoteIp: "203.0.113.7",
-		userAgent: "Mozilla/5.0",
-		responseSize: "51",
-		protocol: "HTTP/1.1",
-	});
-	assert.equal(JSON.stringify(entry).includes("SECRET"), false);
-	assert.equal(pathOnly("/a/b#frag"), "/a/b");
-	assert.equal(severityForStatus(503), "ERROR");
-	assert.equal(severityForStatus(201), "INFO");
+	assert.deepEqual(
+		{ ...entry, requestId: "r" },
+		{
+			time: "2026-11-23T00:00:00.000Z",
+			level: "info",
+			app: "helphive",
+			part: "api",
+			event: "request",
+			ray: RAY,
+			msg: "GET /auth/verify-email 400",
+			severity: "INFO",
+			requestId: "r",
+			route: "/auth/verify-email",
+			userId: "64b7f0c2a1b2c3d4e5f60718",
+			method: "GET",
+			status: 400,
+			ms: 42,
+		},
+	);
+	const raw = JSON.stringify(entry);
+	for (const leak of ["SECRET", "203.0.113.7", "Mozilla"]) assert.equal(raw.includes(leak), false, leak);
+	assert.equal(requestSeverity({ method: "GET", path: "/x", status: 503 }), "ERROR");
+	assert.equal(requestSeverity({ method: "GET", path: "/readyz", status: 200 }), "DEBUG");
+	assert.equal(requestSeverity({ method: "OPTIONS", path: "/auth/login", status: 204 }), "DEBUG");
+	assert.equal(requestSeverity({ method: "POST", path: "/auth/login", status: 401 }), "INFO");
+	const unmatched = buildRequestLogEntry(
+		{ method: "GET", path: "/wp-admin/x", status: 404, latencyMs: 1 },
+		undefined,
+	);
+	assert.equal(unmatched.route, "(unmatched)");
+	assert.equal(unmatched.msg, "GET (unmatched) 404");
 });
 
-test("middleware: X-Request-Id on every response, requestId added to JSON error bodies, one access-log line", () => {
+test("LOG_LEVEL drops lines below it (default info)", () => {
+	const lines: string[] = [];
+	const previous = setLogSink((line) => lines.push(line));
+	const saved = process.env.LOG_LEVEL;
+	try {
+		delete process.env.LOG_LEVEL;
+		log.debug("probe", "hidden");
+		log.info("startup", "shown");
+		process.env.LOG_LEVEL = "debug";
+		log.debug("probe", "shown now");
+		process.env.LOG_LEVEL = "error";
+		log.warn("odd", "hidden");
+		writeEntry(buildLogEntry("ERROR", "exception", "shown", [], undefined));
+		assert.deepEqual(
+			lines.map((line) => JSON.parse(line).msg),
+			["shown", "shown now", "shown"],
+		);
+	} finally {
+		if (saved === undefined) delete process.env.LOG_LEVEL;
+		else process.env.LOG_LEVEL = saved;
+		setLogSink(previous);
+	}
+});
+
+test("middleware: X-Request-Id on every response, requestId added to JSON error bodies, one request line", () => {
 	const lines: any[] = [];
 	const previous = setLogSink((line) => lines.push(JSON.parse(line)));
 	const headers: Record<string, string> = {};
@@ -150,7 +221,7 @@ test("middleware: X-Request-Id on every response, requestId added to JSON error 
 		on: (event: string, fn: () => void) => (listeners[event] = fn),
 	};
 	const req: any = {
-		headers: { "x-app-platform": "web" },
+		headers: { "x-app-platform": "web", "x-cf-ray": RAY },
 		ip: "198.51.100.4",
 		method: "GET",
 		path: "/admin/nothing",
@@ -173,13 +244,16 @@ test("middleware: X-Request-Id on every response, requestId added to JSON error 
 	res.json(["array", "unchanged"]);
 	listeners.finish();
 	assert.equal(lines.length, 1);
-	assert.equal(lines[0].httpRequest.requestUrl, "/admin/nothing");
+	assert.equal(lines[0].event, "request");
+	assert.equal(lines[0].ray, RAY);
 	assert.equal(lines[0].route, "/admin/nothing");
+	assert.equal(lines[0].status, 200);
 	assert.equal(lines[0].appPlatform, "web");
+	assert.equal(JSON.stringify(lines[0]).includes("x=1"), false, "no query string");
 
-	// Health probes are not logged unless they fail.
+	// Health probes are logged at debug, so the default LOG_LEVEL=info leaves them out.
 	lines.length = 0;
-	const quietReq = { ...req, path: "/healthz", originalUrl: "/healthz" };
+	const quietReq = { ...req, path: "/healthz", originalUrl: "/healthz", route: undefined };
 	const quietRes = { ...res, statusCode: 200 };
 	requestContext(quietReq, quietRes, () => undefined);
 	listeners.finish();

@@ -17,8 +17,10 @@ import {
 	validateReverseGeocode,
 } from "../../controllers/user-controllers/validators/places.validators";
 import { validateNoInput } from "../../controllers/user-controllers/validators/common.validators";
+import { markRouteBase } from "../../middleware/requestContext";
 
 const placesRoute = express.Router();
+placesRoute.use(markRouteBase);
 
 const signedIn = [verifyJWT, verifyRoles("User", "Provider")];
 

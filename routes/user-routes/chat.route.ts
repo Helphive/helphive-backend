@@ -24,8 +24,10 @@ import {
 	validateViewing,
 } from "../../controllers/user-controllers/validators/chat.validators";
 import { validateNoInput } from "../../controllers/user-controllers/validators/common.validators";
+import { markRouteBase } from "../../middleware/requestContext";
 
 const chatRoute = express.Router();
+chatRoute.use(markRouteBase);
 
 const signedIn = [verifyJWT, verifyRoles("User", "Provider")];
 

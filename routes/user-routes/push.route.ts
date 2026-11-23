@@ -6,8 +6,10 @@ import { verifyRoles } from "../../middleware/verfiyRoles";
 import { pushRegisterLimiter } from "../../middleware/rateLimit";
 import { handleRegisterPush, handleUnregisterPush } from "../../controllers/user-controllers/push.controller";
 import { validateNoInput } from "../../controllers/user-controllers/validators/common.validators";
+import { markRouteBase } from "../../middleware/requestContext";
 
 const pushRoute = express.Router();
+pushRoute.use(markRouteBase);
 
 const signedIn = [verifyJWT, verifyRoles("User", "Provider")];
 

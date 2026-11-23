@@ -3,9 +3,10 @@ import stripeRoute from "./stripe.route";
 import cloudTasksRoute from "./cloudtasks.route";
 import cometChatRoute from "./cometchat.route";
 import { rejectOperatorKeys } from "../../middleware/sanitizeInput";
-import { bindRequestContext } from "../../middleware/requestContext";
+import { bindRequestContext, markRouteBase } from "../../middleware/requestContext";
 
 const webhookRoute = express.Router();
+webhookRoute.use(markRouteBase);
 
 // Stripe needs the raw body to check its signature; Stripe events are well under 1 MB.
 webhookRoute.use("/stripe", express.raw({ type: "application/json", limit: "1mb" }), bindRequestContext, stripeRoute);

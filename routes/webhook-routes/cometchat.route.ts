@@ -7,8 +7,10 @@ import { verifyBasicAuth } from "../../lib/chat/chatRules";
 import { webhookLimiter } from "../../middleware/rateLimit";
 import { handleCometChatWebhook } from "../../controllers/webhook-controllers/cometchat.controller";
 import log from "../../lib/logger";
+import { markRouteBase } from "../../middleware/requestContext";
 
 const cometChatRoute = express.Router();
+cometChatRoute.use(markRouteBase);
 
 export const verifyCometChatWebhook = (req: Request, res: Response, next: NextFunction) => {
 	const { webhook } = chatConfig();

@@ -22,6 +22,8 @@ export interface RequestContext {
 	trace?: string;
 	spanId?: string;
 	traceSampled?: boolean;
+	/** Mount path of the router handling the request, kept because Express resets req.baseUrl before error handlers. */
+	routeBase?: string;
 	/** Express route pattern once routing matched, e.g. "/admin/admins/:id/role". */
 	route?: string;
 	/** Who is signed in, set by verifyJWT / verifyAdminJWT. */

@@ -70,8 +70,10 @@ import {
 	adminPasswordChangeLimiter,
 	adminRefreshLimiters,
 } from "../middleware/rateLimit";
+import { markRouteBase } from "../middleware/requestContext";
 
 const adminRoute = express.Router();
+adminRoute.use(markRouteBase);
 
 // The public demo admin, for every route here and any added later: per-address limits, no writes except its own
 // sign-in, refresh and sign-out (403 demo_read_only), and every successful response masked (lib/demoMask.ts).

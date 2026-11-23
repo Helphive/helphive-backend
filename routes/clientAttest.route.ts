@@ -15,6 +15,7 @@ import {
 import { AttestGoogle, GoogleCallError, googleAttest } from "../lib/clientAttest/google";
 import { Platform, isDebugToken, signPass } from "../lib/clientAttest/pass";
 import { evaluateIntegrityPayload, evaluateRecaptchaAssessment, type Verdict } from "../lib/clientAttest/verdict";
+import { markRouteBase } from "../middleware/requestContext";
 
 const DEVICE_ID = /^[A-Za-z0-9._-]{8,128}$/;
 const MAX_TOKEN_LENGTH = 32_768;
@@ -116,6 +117,7 @@ export const attestBodyError: ErrorRequestHandler = (err, _req, res, next) =>
 	err?.type === "entity.parse.failed" || err?.type === "entity.too.large" ? badRequest(res) : next(err);
 
 const clientAttestRoute = express.Router();
+clientAttestRoute.use(markRouteBase);
 clientAttestRoute.post("/", createClientAttestHandler());
 
 export default clientAttestRoute;

@@ -51,8 +51,10 @@ import {
 import { uploadFields } from "../../middleware/uploads";
 import { rejectUndeliverableSignup } from "../../middleware/signupEmailCheck";
 import { riskListGate } from "../../lib/risk/gate";
+import { markRouteBase } from "../../middleware/requestContext";
 
 const authRoute = express.Router();
+authRoute.use(markRouteBase);
 
 // Sign-up needs the verification email, so an address the email policy would never send to is refused (400) after
 // the limiter and validation and before any account is created (lib/emailPolicy.ts).

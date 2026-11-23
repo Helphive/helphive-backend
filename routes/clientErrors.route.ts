@@ -4,7 +4,7 @@
 import express from "express";
 import { createLimiter } from "../middleware/rateLimit";
 import { ipKey } from "../middleware/rateLimitKeys";
-import { bindRequestContext } from "../middleware/requestContext";
+import { bindRequestContext, markRouteBase } from "../middleware/requestContext";
 import { rejectOperatorKeys } from "../middleware/sanitizeInput";
 import { handleClientError } from "../controllers/admin/observabilityOps.controller";
 
@@ -25,6 +25,7 @@ export const clientErrorDeviceLimiter = createLimiter({
 });
 
 const clientErrorsRoute = express.Router();
+clientErrorsRoute.use(markRouteBase);
 
 clientErrorsRoute.post(
 	"/",

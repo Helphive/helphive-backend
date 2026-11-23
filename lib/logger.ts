@@ -148,13 +148,24 @@ export const PROBE_PATHS: ReadonlySet<string> = new Set(["/healthz", "/livez", "
 export const requestSeverity = (input: Pick<RequestLogInput, "method" | "path" | "status">): Severity =>
 	input.status >= 500 ? "ERROR" : input.method === "OPTIONS" || PROBE_PATHS.has(input.path) ? "DEBUG" : "INFO";
 
+/**
+ * Route for a request no route handled: rejected by middleware before routing (client pass, sign-in, rate limit) or
+ * answered by the catch-all 404 ("*"). The first path segment only ("/auth/*"), as the edge logs it: the rest of the
+ * path can carry ids and tokens.
+ */
+export const coarseRoute = (path: string) => {
+	const first = path.split("/")[1];
+	return first ? `/${first.slice(0, 40)}/*` : "/";
+};
+
 /** The line for one finished request: the matched route pattern (never the raw URL), status and duration. */
 export const buildRequestLogEntry = (
 	input: RequestLogInput,
 	context: RequestContext | undefined,
 	now: Date = new Date(),
 ): LogEntry => {
-	const route = context?.route ?? (PROBE_PATHS.has(input.path) ? input.path : "(unmatched)");
+	const matched = context?.route && context.route !== "*" ? context.route : undefined;
+	const route = matched ?? (PROBE_PATHS.has(input.path) ? input.path : coarseRoute(input.path));
 	const ms = Math.max(0, Math.round(input.latencyMs));
 	return {
 		...head(requestSeverity(input), "request", `${input.method} ${route} ${input.status}`, context, now),

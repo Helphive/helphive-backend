@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import multer from "multer";
 import { CorsError } from "../config/corsOptions";
 import { MAX_UPLOAD_BYTES, UploadRejectedError } from "./uploads";
-import log from "../lib/logger";
+import log, { coarseRoute } from "../lib/logger";
 
 /**
  * Last-resort handler. Express recognises an error handler only by its four parameters. Known client errors get a
@@ -25,6 +25,6 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
 		return res.status(400).json({ message: "Invalid file upload." });
 	}
 
-	log.error("exception", `Unhandled error on ${req.method} ${req.context?.route ?? "(unmatched)"}`, err);
+	log.error("exception", `Unhandled error on ${req.method} ${req.context?.route ?? coarseRoute(req.path)}`, err);
 	res.status(500).json({ message: "Internal Server Error", requestId: req.context?.requestId });
 };

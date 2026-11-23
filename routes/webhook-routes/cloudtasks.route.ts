@@ -10,8 +10,10 @@ import { safeEqual } from "../../controllers/user-controllers/utils/token.utils"
 import { webhookLimiter } from "../../middleware/rateLimit";
 import { recordTaskRun } from "../../lib/webhookRecorder";
 import log from "../../lib/logger";
+import { markRouteBase } from "../../middleware/requestContext";
 
 const cloudTasksRoute = express.Router();
+cloudTasksRoute.use(markRouteBase);
 
 // A short or missing secret would be guessable; refuse every call until a proper one is configured.
 const MIN_SECRET_LENGTH = 16;

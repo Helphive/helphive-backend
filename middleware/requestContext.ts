@@ -5,10 +5,22 @@ import { buildRequestLogEntry, writeEntry } from "../lib/logger";
 
 const projectId = () => process.env.GOOGLE_CLOUD_PROJECT || GOOGLE_CLOUD_PROJECT_ID;
 
-/** The matched route pattern while still inside the router (Express resets baseUrl once the router is left). */
+/**
+ * The matched route pattern. Express resets req.baseUrl once the router is left (before error handlers run), so the
+ * mount path recorded by markRouteBase fills in for it there.
+ */
 const routePattern = (req: Request) => {
 	const path = req.route?.path;
-	return typeof path === "string" ? `${req.baseUrl}${path}` : undefined;
+	if (typeof path !== "string") return undefined;
+	// The app-level catch-all 404 ("*") can follow a router that matched nothing; never borrow that router's base.
+	if (path === "*") return "*";
+	return `${req.baseUrl || req.context?.routeBase || ""}${path}`;
+};
+
+/** First middleware of every router: records the router's mount path for request and error lines. */
+export const markRouteBase = (req: Request, _res: Response, next: NextFunction) => {
+	if (req.context) req.context.routeBase = req.baseUrl;
+	next();
 };
 
 /**

@@ -89,10 +89,13 @@ test("every admin route that acts for a signed-in admin runs verifyAdminJWT then
 test("the demo admin's limiter, read-only guard and response masking are mounted on the whole admin router", () => {
 	/* eslint-disable-next-line @typescript-eslint/no-require-imports */
 	const demo = require("../middleware/demoAdmin");
+	/* eslint-disable-next-line @typescript-eslint/no-require-imports */
+	const { markRouteBase } = require("../middleware/requestContext");
 	const routerLevel = (modules.admin.stack as any[]).filter((layer) => !layer.route).map((layer) => layer.handle);
-	assert.deepEqual(routerLevel.slice(0, 3), [demo.demoAdminRequestLimiter, demo.demoReadOnly, demo.demoResponseMask]);
+	assert.equal(routerLevel[0], markRouteBase, "the router records its mount path first (logging)");
+	assert.deepEqual(routerLevel.slice(1, 4), [demo.demoAdminRequestLimiter, demo.demoReadOnly, demo.demoResponseMask]);
 	const firstRoute = (modules.admin.stack as any[]).findIndex((layer) => layer.route);
-	assert.ok(firstRoute >= 3, "mounted before every route");
+	assert.ok(firstRoute >= 4, "mounted before every route");
 });
 
 test("the routes and permissions the current console uses are unchanged in path and method", () => {

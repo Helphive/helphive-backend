@@ -108,6 +108,13 @@ export const createLimiter = ({ name, rule, kind, key, failuresOnly, isFailure, 
 		...(isFailure ? { requestWasSuccessful: (req: Request, res: Response) => !isFailure(req, res) } : {}),
 		// If MongoDB is unreachable the request goes through rather than locking everyone out.
 		passOnStoreError: true,
+		// Store errors and configuration warnings go through the app logger, not the console (OracleVMOps LOGGING.md).
+		logger: {
+			error: (error: unknown, message?: string) =>
+				log.error("rate_limiter_store_failed", `Rate limiter ${name}: ${message ?? "store error"}`, error),
+			warn: (error: unknown, message?: string) =>
+				log.warn("rate_limiter_warning", `Rate limiter ${name}: ${message ?? "warning"}`, error),
+		},
 		...(kind === "shared" ? { store: new MongoRateLimitStore(name) } : {}),
 		handler: (req: Request, res: Response, next: NextFunction) => {
 			const reject = () => {

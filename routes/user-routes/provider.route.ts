@@ -23,8 +23,10 @@ import { blockDemoAccounts } from "../../middleware/blockDemoAccounts";
 import { requireApprovedProvider } from "../../middleware/requireApprovedProvider";
 import { bookingActionLimiter, payoutLimiter, uploadLimiter } from "../../middleware/rateLimit";
 import { uploadFields } from "../../middleware/uploads";
+import { markRouteBase } from "../../middleware/requestContext";
 
 const providerRoute = express.Router();
+providerRoute.use(markRouteBase);
 
 providerRoute.post(
 	"/request-provider-account",

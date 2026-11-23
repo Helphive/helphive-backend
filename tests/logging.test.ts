@@ -18,7 +18,7 @@ import {
 	parseTraceHeader,
 	resolveRequestId,
 } from "../lib/requestContext";
-import { requestContext } from "../middleware/requestContext";
+import { markRouteBase, requestContext } from "../middleware/requestContext";
 import { parseDuration } from "../lib/duration";
 
 const TRACE = "105445aa7843bc8bf206b12000100000";
@@ -178,8 +178,19 @@ test("request line: route pattern (never the raw URL), status, ms, user id; leve
 		{ method: "GET", path: "/wp-admin/x", status: 404, latencyMs: 1 },
 		undefined,
 	);
-	assert.equal(unmatched.route, "(unmatched)");
-	assert.equal(unmatched.msg, "GET (unmatched) 404");
+	assert.equal(unmatched.route, "/wp-admin/*", "no route matched: first path segment only");
+	assert.equal(unmatched.msg, "GET /wp-admin/* 404");
+	const guarded = buildRequestLogEntry(
+		{ method: "POST", path: "/auth/reset/64b7f0c2a1b2c3d4e5f60718/token", status: 428, latencyMs: 1 },
+		{ requestId: "r" },
+	);
+	assert.equal(guarded.route, "/auth/*", "rejected before routing");
+	const catchAll = buildRequestLogEntry(
+		{ method: "GET", path: "/nope/x", status: 404, latencyMs: 1 },
+		{ requestId: "r", route: "*" },
+	);
+	assert.equal(catchAll.route, "/nope/*");
+	assert.equal(buildRequestLogEntry({ method: "GET", path: "/", status: 200, latencyMs: 1 }, undefined).route, "/");
 });
 
 test("LOG_LEVEL drops lines below it (default info)", () => {
@@ -258,6 +269,49 @@ test("middleware: X-Request-Id on every response, requestId added to JSON error 
 	requestContext(quietReq, quietRes, () => undefined);
 	listeners.finish();
 	assert.equal(lines.length, 0);
+	setLogSink(previous);
+});
+
+test("error lines keep the router prefix after Express resets baseUrl (markRouteBase)", () => {
+	const lines: any[] = [];
+	const previous = setLogSink((line) => lines.push(JSON.parse(line)));
+	const headers: Record<string, string> = {};
+	const listeners: Record<string, () => void> = {};
+	const res: any = {
+		statusCode: 200,
+		setHeader: (name: string, value: string) => (headers[name.toLowerCase()] = value),
+		getHeader: (name: string) => headers[name.toLowerCase()],
+		json: () => res,
+		end: () => res,
+		on: (event: string, fn: () => void) => (listeners[event] = fn),
+	};
+	const req: any = { headers: {}, ip: "198.51.100.4", method: "POST", path: "/auth/login", baseUrl: "" };
+	requestContext(req, res, () => undefined);
+	// Inside the auth router: Express sets baseUrl, the router's first middleware records it, the route matches.
+	req.baseUrl = "/auth";
+	markRouteBase(req, res, () => undefined);
+	req.route = { path: "/login" };
+	// The handler fails; Express leaves the router (baseUrl reset) and the app error handler answers.
+	req.baseUrl = "";
+	res.statusCode = 500;
+	res.json({ message: "Internal Server Error" });
+	listeners.finish();
+	assert.equal(lines.length, 1);
+	assert.equal(lines[0].route, "/auth/login");
+	assert.equal(lines[0].level, "error");
+
+	// A router that matched nothing, then the app-level catch-all 404: the coarse route, not "/auth*".
+	lines.length = 0;
+	const req404: any = { headers: {}, ip: "198.51.100.4", method: "GET", path: "/auth/nothing", baseUrl: "" };
+	const res404: any = { ...res, statusCode: 404 };
+	requestContext(req404, res404, () => undefined);
+	req404.baseUrl = "/auth";
+	markRouteBase(req404, res404, () => undefined);
+	req404.baseUrl = "";
+	req404.route = { path: "*" };
+	res404.json({ message: "Not found" });
+	listeners.finish();
+	assert.equal(lines[0].route, "/auth/*");
 	setLogSink(previous);
 });
 

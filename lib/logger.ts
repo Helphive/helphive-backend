@@ -158,6 +158,12 @@ export const coarseRoute = (path: string) => {
 	return first ? `/${first.slice(0, 40)}/*` : "/";
 };
 
+/**
+ * The full request path without query or fragment. req.path is relative to the current mount point, so a response
+ * sent from middleware mounted at "/auth" would read "/login"; the original URL keeps the prefix.
+ */
+export const fullPath = (originalUrl: string) => originalUrl.split(/[?#]/, 1)[0] || "/";
+
 /** The line for one finished request: the matched route pattern (never the raw URL), status and duration. */
 export const buildRequestLogEntry = (
 	input: RequestLogInput,

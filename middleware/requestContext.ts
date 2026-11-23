@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { GOOGLE_CLOUD_PROJECT_ID } from "../config/config";
 import { buildRequestContext, runWithContext } from "../lib/requestContext";
-import { buildRequestLogEntry, writeEntry } from "../lib/logger";
+import { buildRequestLogEntry, fullPath, writeEntry } from "../lib/logger";
 
 const projectId = () => process.env.GOOGLE_CLOUD_PROJECT || GOOGLE_CLOUD_PROJECT_ID;
 
@@ -60,7 +60,7 @@ export const requestContext = (req: Request, res: Response, next: NextFunction) 
 			buildRequestLogEntry(
 				{
 					method: req.method,
-					path: req.path,
+					path: fullPath(req.originalUrl ?? req.path),
 					status: res.statusCode,
 					latencyMs: Number(process.hrtime.bigint() - started) / 1e6,
 				},
